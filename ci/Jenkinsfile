@@ -1,0 +1,64 @@
+pipeline {
+    agent {
+        label 'home'
+    }
+
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: ['dns', 'grafana', 'jenkins', 'nexus', 'portainer', 'prometheus', 'proxy', 'vpn'],
+            description: 'Wybierz usługę do wdrożenia'
+        )
+    }
+
+    stages {
+        stage('Konfiguracja kluczy SSH') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'id_home_lab', keyFileVariable: 'SSH_KEY')]) {
+                    sh '''
+                        mkdir -p /root/.ssh
+                        cp "$SSH_KEY" /root/.ssh/id_home_lab
+                        chmod 600 /root/.ssh/id_home_lab
+                       '''
+                }
+            }
+        }
+
+        stage('Wyciąganie sekretu z Jenkins Credentials') {
+            steps {
+                script {
+                    def credsMap = [
+                        vpn: 'secret-file-vpn'
+                    ]
+
+                    def credentialsId = credsMap[params.SERVICE]
+
+                    if (credentialsId) {
+                        echo "Używam sekretnych plików: ${credentialsId}"
+                        withCredentials([file(credentialsId: credentialsId, variable: 'SECRET_FILE')]) {
+                            sh """
+                                mkdir -p ${params.SERVICE}
+                                cp "\$SECRET_FILE" "${params.SERVICE}/.env"
+                            """
+                        }
+                    } else {
+                        echo "Brak skonfigurowanego sekretu dla ${params.SERVICE}, pomijam"
+                    }
+                }
+            }
+        }
+
+        stage('Uruchamianie playbooka Ansible') {
+            environment {
+                ANSIBLE_HOST_KEY_CHECKING = 'False'
+            }
+            steps {
+                script {
+                    def playbookPath = "${params.SERVICE}/playbook.yml"
+                    sh "ansible-galaxy install -r ansible/requirements.yml"
+                    sh "ansible-playbook -i inventory.ini ${playbookPath}"
+                }
+            }
+        }
+    }
+}

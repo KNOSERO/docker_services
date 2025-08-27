@@ -1,0 +1,11 @@
+- name: Deploy VPN
+  hosts: HOME_SERWER
+  become: yes
+
+  vars:
+    host_path: "{{ playbook_dir }}"
+    server_dir: "{{ playbook_dir | basename }}"
+
+  tasks:
+    - name: Run deploy_docker.yml
+      include_tasks: ../ansible/deploy_docker.yml

@@ -1,0 +1,63 @@
+version: '3.9'
+
+services:
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    user: root
+    restart: always
+    ports:
+      - '${PORT_WEB_GRAFANA}:3000'
+    volumes:
+      - ${GRAFANA_DATA}:/var/lib/grafana
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    user: root
+    restart: always
+    ports:
+      - '${PORT_WEB_PROMETHEUS}:9090'
+    volumes:
+      - ${ETC_PROMETHEUS}:/etc/prometheus/prometheus.yml
+      - ${PROMETHEUS_DATA}:/prometheus
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: always
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    expose:
+      - 9100
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - '${CADVISOR_WEB_PROMETHEUS}:8080'
+    restart: always
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    name: monitoring
+    driver: bridge
