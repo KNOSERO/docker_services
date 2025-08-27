@@ -1,1 +1,5 @@
 .idea
+vpn/.env
+tools/.env
+monitoring/.env
+monitoringPve/.env
