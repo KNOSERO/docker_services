@@ -99,9 +99,7 @@ pipeline {
         stage('Test Docker Compose') {
             steps {
                 script {
-                    sh '''
-                        ./script/validate_docker.sh
-                    '''
+                    sh 'bash ./script/validate_docker.sh'
                 }
             }
         }
