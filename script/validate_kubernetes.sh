@@ -24,7 +24,7 @@ args=(-kubernetes-version "$KUBE_VERSION")
 
 set +e
 docker run --rm -i \
-  -v "$REPO_ROOT":/work -w /work \
+  -v "$REPO_ROOT":/ \
   ghcr.io/yannh/kubeconform:latest-alpine \
   "${args[@]}" "${K8S_FILES[@]}"
 status=$?
