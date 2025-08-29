@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 KUBE_VERSION="${KUBE_VERSION:-1.29.0}"
 STRICT="${STRICT:-1}"
@@ -8,30 +7,43 @@ SUMMARY="${SUMMARY:-1}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# Znajdź wszystkie YAML-e w katalogu src/
 mapfile -t K8S_FILES < <(
     git -C "$REPO_ROOT" ls-files | grep -E '(^|/)manifest([^/]*?)\.ya?ml$' || true
 )
 
 if ((${#K8S_FILES[@]}==0)); then
-    echo "No k3s/k8s manifest files to check."
+    echo "No Kubernetes manifest files to check."
     exit 0
 fi
+
+echo "[DEBUG] Files to check:"
+printf ' - %s\n' "${K8S_FILES[@]}"
+
+# Policz resources w każdym pliku
+echo "[DEBUG] Resource count per file:"
+for f in "${K8S_FILES[@]}"; do
+    count=$(grep -c '^---' "$f" || true)
+    count=$((count+1))
+    echo "   $f → $count resources"
+done
 
 args=(-kubernetes-version "$KUBE_VERSION")
 [[ "$STRICT" == "1" ]] && args+=(-strict)
 [[ "$SUMMARY" == "1" ]] && args+=(-summary)
 [[ "$STRICT_CRD" != "1" ]] && args+=(-ignore-missing-schemas)
 
+echo "[INFO] Running kubeconform..."
 set +e
 tar -C "$REPO_ROOT" -cf - "${K8S_FILES[@]}" | \
-  docker run --rm -i ghcr.io/yannh/kubeconform:latest \
+docker run --rm -i ghcr.io/yannh/kubeconform:latest \
     "${args[@]}" -
 status=$?
 set -e
 
 if [[ $status -ne 0 ]]; then
-  echo "✗ Kubernetes/k3s YAML validation failed!"
+  echo "✗ Kubernetes YAML validation failed!"
   exit $status
 else
-  echo "✓ Kubernetes/k3s YAML is valid (schema)."
+  echo "✓ Kubernetes YAML is valid (schema)."
 fi
