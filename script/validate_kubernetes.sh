@@ -33,6 +33,18 @@ args=(-kubernetes-version "$KUBE_VERSION")
 [[ "$SUMMARY" == "1" ]] && args+=(-summary)
 [[ "$STRICT_CRD" != "1" ]] && args+=(-ignore-missing-schemas)
 
+echo "[DEBUG] Checking for invalid characters..."
+bad_files=0
+for f in "${K8S_FILES[@]}"; do
+    if grep -q -P '[\x00-\x09\x0B\x0C\x0E-\x1F]' "$f"; then
+        echo "✗ Invalid control characters in $f"
+        bad_files=1
+    fi
+done
+if [[ $bad_files -ne 0 ]]; then
+    echo "✗ Found invalid characters in YAML files, aborting."
+    exit 1
+fi
 echo "[INFO] Running kubeconform..."
 set +e
 tar -C "$REPO_ROOT" -cf - "${K8S_FILES[@]}" | \
