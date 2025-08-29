@@ -22,6 +22,11 @@ args=(-kubernetes-version "$KUBE_VERSION")
 [[ "$SUMMARY" == "1" ]] && args+=(-summary)
 [[ "$STRICT_CRD" != "1" ]] && args+=(-ignore-missing-schemas)
 
+echo "[DEBUG] PWD=$PWD"
+echo "[DEBUG] REPO_ROOT=$REPO_ROOT"
+echo "[DEBUG] Files to check:"
+printf ' - %s\n' "${K8S_FILES[@]}"
+
 set +e
 docker run --rm -i \
   -v "$REPO_ROOT":/work -w work \
