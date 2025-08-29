@@ -18,19 +18,21 @@ pipeline {
     }
 
     triggers {
-        GenericTrigger(
-            genericVariables: [
-                [key: 'PR_ACTION', value: '$.action',                 expressionType: 'JSONPath', defaultValue: ''],
-                [key: 'PR_NUMBER', value: '$.number',                 expressionType: 'JSONPath', defaultValue: ''],
-                [key: 'PR_SHA',    value: '$.pull_request.head.sha',  expressionType: 'JSONPath', defaultValue: '']
-            ],
-            token: 'ravcube_docker_service',
-            printContributedVariables: true,
-            printPostContent: false,
+        withCredentials([string(credentialsId: 'webhookCredentials', variable: 'TOKEN_WEBHOOK')]) {
+            GenericTrigger(
+                genericVariables: [
+                    [key: 'PR_ACTION', value: '$.action',                 expressionType: 'JSONPath', defaultValue: ''],
+                    [key: 'PR_NUMBER', value: '$.number',                 expressionType: 'JSONPath', defaultValue: ''],
+                    [key: 'PR_SHA',    value: '$.pull_request.head.sha',  expressionType: 'JSONPath', defaultValue: '']
+                ],
+                token: '${TOKEN_WEBHOOK}',
+                printContributedVariables: true,
+                printPostContent: false,
 
-            regexpFilterText: '$PR_ACTION',
-            regexpFilterExpression: 'opened|reopened|synchronize'
-        )
+                regexpFilterText: '$PR_ACTION',
+                regexpFilterExpression: 'opened|reopened|synchronize'
+            )
+        }
     }
     stages {
         stage('Checkout PR') {
