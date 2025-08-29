@@ -7,7 +7,6 @@ SUMMARY="${SUMMARY:-1}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-# Znajdź wszystkie YAML-e w katalogu src/
 mapfile -t K8S_FILES < <(
     git -C "$REPO_ROOT" ls-files | grep -E '(^|/)manifest([^/]*?)\.ya?ml$' || true
 )
