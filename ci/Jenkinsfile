@@ -101,6 +101,9 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        git rev-parse --abbrev-ref HEAD
+                        echo "=== Workspace files ==="
+                        find . -maxdepth 3 -type f -name 'manifest.yml'
                         bash ./script/validate_docker.sh
                     '''
                 }
