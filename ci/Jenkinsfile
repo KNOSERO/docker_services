@@ -15,7 +15,6 @@ pipeline {
         ACCOUNT = 'KNOSERO'
         REPO = 'docker_service'
         PIPELINE_NAME = 'docker_service_validate'
-        DOCKER_BUILDKIT = '1'
     }
 
     triggers {
@@ -111,8 +110,6 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        export DOCKER_HOST=tcp://home.ravnet:2375
-
                         KUBE_VERSION=1.29.0 STRICT=1 STRICT_CRD=0 SUMMARY=1 bash ./script/validate_kubernetes.sh
                     '''
                 }
