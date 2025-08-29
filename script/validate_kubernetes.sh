@@ -27,11 +27,10 @@ echo "[DEBUG] REPO_ROOT=$REPO_ROOT"
 echo "[DEBUG] Files to check:"
 printf ' - %s\n' "${K8S_FILES[@]}"
 
-docker run --rm -v "$REPO_ROOT:/work" -w /work alpine ls -l src/grafana || true
-
+MOUNT_PATH="$(realpath "$REPO_ROOT")"
 set +e
 docker run --rm -i \
-  -v "$REPO_ROOT:/work" -w /work \
+  -v "${MOUNT_PATH}:/work" -w /work \
   ghcr.io/yannh/kubeconform:latest \
   "${args[@]}" "${K8S_FILES[@]}"
 status=$?
