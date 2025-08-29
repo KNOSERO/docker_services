@@ -5,7 +5,7 @@ STRICT="${STRICT:-1}"
 STRICT_CRD="${STRICT_CRD:-0}"
 SUMMARY="${SUMMARY:-1}"
 
-SEARCH_RE='(^|/)(manifest?)?)/.*\.yml$'
+SEARCH_RE='(^|/)(manifest([^/]*?)\.ya?ml$'
 EXCLUDE_RE='(templates/|values[^/]*\.yml$)'
 
 mapfile -d '' K8S_FILES < <(
