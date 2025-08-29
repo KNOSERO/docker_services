@@ -5,7 +5,7 @@ STRICT="${STRICT:-1}"
 STRICT_CRD="${STRICT_CRD:-0}"
 SUMMARY="${SUMMARY:-1}"
 
-mapfile -t K8S_FILES < <(git ls-files | grep -E '(^|/)(manifest([^/]*?)\.ya?ml$' || true)
+mapfile -t K8S_FILES < <(git ls-files | grep -E '(^|/)manifest([^/]*?)\.ya?ml$' || true)
 if ((${#K8S_FILES[@]}==0)); then
     echo "No k3s/k8s manifest files to check."
     exit 0
