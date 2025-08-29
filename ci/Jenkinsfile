@@ -101,6 +101,14 @@ pipeline {
                 }
             }
         }
+
+        stage('Test Docker Compose') {
+            steps {
+                script {
+                    sh 'bash ./script/validate_kubernetes.sh'
+                }
+            }
+        }
     }
     post {
         success {
