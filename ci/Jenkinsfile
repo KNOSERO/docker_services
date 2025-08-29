@@ -12,10 +12,10 @@ pipeline {
         DEFAULT_BRANCH = 'master'
         CREDITS_ID = 'github-token'
         SECRET_WEBHOOK = 'github-secret-webhook'
-        ACCOUNT: 'KNOSERO'
-        REPO: 'docker_service'
-        TOKEN_TRIGGER: 'knosero_docker_service'
-        PIPELINE_NAME: 'docker_service_validate'
+        ACCOUNT = 'KNOSERO'
+        REPO = 'docker_service'
+        TOKEN_TRIGGER = 'knosero_docker_service'
+        PIPELINE_NAME = 'docker_service_validate'
     }
 
     triggers {
