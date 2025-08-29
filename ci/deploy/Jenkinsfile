@@ -48,7 +48,7 @@ pipeline {
             }
             steps {
                 script {
-                    def playbookPath = "${params.SERVICE}/playbook.yml"
+                    def playbookPath = "src/${params.SERVICE}/playbook.yml"
                     sh "ansible-galaxy install -r ansible/requirements.yml"
                     sh "ansible-playbook -i inventory.ini ${playbookPath}"
                 }
