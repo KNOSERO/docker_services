@@ -76,6 +76,7 @@ pipeline {
         }
 
         stage('Init Pipeline Status') {
+            when { not { expression { env.PR_ACTION == 'opened' || env.PR_ACTION == 'reopened' || env.PR_ACTION == 'synchronize' } } }
             steps {
                 script {
                     def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
