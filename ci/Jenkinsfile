@@ -1,0 +1,143 @@
+pipeline {
+    agent {
+        label 'home'
+    }
+    options {
+        skipDefaultCheckout();
+        timestamps();
+        ansiColor('xterm')
+    }
+    environment {
+        REPO_URL = 'https://github.com/KNOSERO/cubestorybook.git'
+        DEFAULT_BRANCH = 'master'
+        CREDITS_ID = 'github-token'
+        SECRET_WEBHOOK = 'github-secret-webhook'
+        ACCOUNT: 'KNOSERO',
+        REPO: 'docker_service',
+        TOKEN_TRIGGER: 'knosero_docker_service',
+        PIPELINE_NAME: 'docker_service_validate'
+    }
+
+    triggers {
+        GenericTrigger(
+            genericVariables: [
+                [key: 'PR_ACTION', value: '$.action',                 expressionType: 'JSONPath', defaultValue: ''],
+                [key: 'PR_NUMBER', value: '$.number',                 expressionType: 'JSONPath', defaultValue: ''],
+                [key: 'PR_SHA',    value: '$.pull_request.head.sha',  expressionType: 'JSONPath', defaultValue: '']
+            ],
+            token: env.TOKEN_TRIGGER,
+            printContributedVariables: true,
+            printPostContent: false,
+
+            regexpFilterText: '$PR_ACTION',
+            regexpFilterExpression: 'opened|reopened|synchronize'
+        )
+    }
+    stages {
+        stage('Checkout PR') {
+            when { expression { env.PR_ACTION == 'opened' && env.PR_NUMBER || env.PR_ACTION == 'reopened' && env.PR_NUMBER || env.PR_ACTION == 'synchronize' && env.PR_NUMBER } }
+            steps {
+                checkout([$class: 'GitSCM',
+                    userRemoteConfigs: [[
+                        name: 'origin',
+                        url: env.REPO_URL,
+                        credentialsId: env.CREDITS_ID,
+                        refspec: '+refs/heads/*:refs/remotes/origin/* +refs/pull/*:refs/remotes/origin/pr/*'
+                    ]],
+                    branches: [[ name: "origin/pr/${env.PR_NUMBER}/merge" ]],
+                    extensions: [
+                        [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
+                        [$class: 'PruneStaleBranch']
+                    ]
+                ])
+            }
+        }
+
+        stage('Checkout Manual') {
+            when { not { expression { env.PR_ACTION == 'opened' || env.PR_ACTION == 'reopened' || env.PR_ACTION == 'synchronize' } } }
+            steps {
+                checkout([$class: 'GitSCM',
+                    userRemoteConfigs: [[
+                        name: 'origin',
+                        url: env.REPO_URL,
+                        credentialsId: env.CREDITS_ID,
+                        refspec: '+refs/heads/*:refs/remotes/origin/*'
+                    ]],
+                    branches: [[ name: "*/${env.DEFAULT_BRANCH}" ]],
+                    extensions: [
+                        [$class:'CloneOption', shallow:true, depth:25, noTags:true, timeout:240],
+                        [$class:'PruneStaleBranch']
+                    ]
+                ])
+            }
+        }
+
+        stage('Init Submodules') {
+            steps {
+                script {
+                    def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
+                    if (sha?.trim()) {
+                        githubNotify credentialsId: env.CREDITS_ID,
+                                     account: env.ACCOUNT,
+                                     repo: env.REPO,
+                                     sha: "${sha}",
+                                     context: env.PIPELINE_NAME,
+                                     status: 'PENDING',
+                                     description: 'Pipeline started'
+                    }
+                    sh '''
+                        git config --global url."https://github.com/".insteadOf "git@github.com:"
+                        git submodule sync --recursive
+                        git submodule update --init --recursive
+                    '''
+                }
+            }
+        }
+
+        stage('SSH Key Configuration') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'id_home_lab', keyFileVariable: 'SSH_KEY'),
+                                 sshUserPrivateKey(credentialsId: 'id_home_lab_pub', keyFileVariable: 'SSH_KEY_PUB')]) {
+                    sh '''
+                         mkdir -p /root/.ssh
+                         cp "$SSH_KEY" /root/.ssh/id_home_lab
+                         chmod 600 /root/.ssh/id_home_lab
+                    '''
+                }
+            }
+        }
+
+
+
+    }
+    post {
+        success {
+            script {
+                def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
+                if (sha?.trim()) {
+                    githubNotify credentialsId: env.CREDITS_ID,
+                                 account: env.ACCOUNT,
+                                 repo: env.REPO,
+                                 sha: "${sha}",
+                                 context: env.PIPELINE_NAME,
+                                 status: 'SUCCESS',
+                                 description: 'All stages passed ✅'
+                }
+            }
+        }
+        failure {
+            script {
+                def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
+                if (sha?.trim()) {
+                    githubNotify credentialsId: env.CREDITS_ID,
+                                 account: env.ACCOUNT,
+                                 repo: env.REPO,
+                                 sha: "${sha}",
+                                 context: env.PIPELINE_NAME,
+                                 status: 'FAILURE',
+                                 description: 'Pipeline failed ❌'
+                }
+            }
+        }
+    }
+}

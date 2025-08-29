@@ -1,5 +1,4 @@
 .idea
-vpn/.env
-tools/.env
-monitoring/.env
+src/vpn/.env
+src/monitoring/.env
 monitoringPve/.env

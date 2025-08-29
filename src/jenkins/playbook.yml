@@ -8,4 +8,4 @@
 
   tasks:
     - name: Run deploy_docker.yml
-      include_tasks: ../ansible/deploy_docker.yml
+      include_tasks: ../../ansible/deploy_docker.yml

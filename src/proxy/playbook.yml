@@ -1,5 +1,5 @@
-- name: Deploy Nexus
-  hosts: HOME_SERWER
+- name: Deploy Proxy
+  hosts: PRIMAL_SERWER
   become: yes
 
   vars:
@@ -8,4 +8,4 @@
 
   tasks:
     - name: Run deploy_docker.yml
-      include_tasks: ../ansible/deploy_docker.yml
+      include_tasks: ../../ansible/deploy_docker.yml
