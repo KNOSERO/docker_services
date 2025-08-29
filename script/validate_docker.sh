@@ -12,7 +12,6 @@ compose_check() {
   local tmp; tmp="$(mktemp)"
 
   if has_compose_v2; then
-    # błąd YAML → exit!=0 → skrypt kończy się przez set -e
     docker compose -f "$file" config >/dev/null 2>"$tmp" || {
       echo "✗ ERROR in $file:" >&2; cat "$tmp" >&2; exit 1; }
   elif has_compose_v1; then
@@ -22,7 +21,6 @@ compose_check() {
     echo "✗ ERROR: hasn't docker compose (v2 ani v1) in PATH" >&2; exit 1
   fi
 
-  # Twarde reguły opcjonalne:
   if [[ "$STRICT_ENV" == "1" ]] && grep -qi 'variable is not set' "$tmp"; then
     echo "✗ ERROR (missing env) in $file:" >&2; cat "$tmp" >&2; exit 2
   fi
@@ -30,7 +28,6 @@ compose_check() {
     echo "✗ ERROR (warnings as error) in $file:" >&2; cat "$tmp" >&2; exit 3
   fi
 
-  # Miękki hint: Compose v2 ignoruje 'version:'
   if grep -q '^[[:space:]]*version:' "$file"; then
     echo "⚠ warning: 'version:' is obsolete in $file"
   fi
