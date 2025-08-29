@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 mapfile -d '' COMPOSE_FILES < <(
   git ls-files -z | grep -zE '(^|/)(docker-)?compose([^/]*?)\.ya?ml$'
