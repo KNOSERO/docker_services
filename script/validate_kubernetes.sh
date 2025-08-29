@@ -17,7 +17,7 @@ fi
 
 if ! command -v kubeconform >/dev/null 2>&1; then
   echo "[INFO] Downloading kubeconform..."
-  curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amr64.tar.gz \
+  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-arm64.tar.gz \
     | tar -xz -C /usr/local/bin
 fi
 
