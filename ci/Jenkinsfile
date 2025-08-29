@@ -8,7 +8,7 @@ pipeline {
         ansiColor('xterm')
     }
     environment {
-        REPO_URL = 'https://github.com/KNOSERO/cubestorybook.git'
+        REPO_URL = 'https://github.com/KNOSERO/docker_services.git'
         DEFAULT_BRANCH = 'master'
         CREDITS_ID = 'github-token'
         SECRET_WEBHOOK = 'github-secret-webhook'
