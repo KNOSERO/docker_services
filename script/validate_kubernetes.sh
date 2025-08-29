@@ -23,10 +23,9 @@ args=(-kubernetes-version "$KUBE_VERSION")
 [[ "$STRICT_CRD" != "1" ]] && args+=(-ignore-missing-schemas)
 
 set +e
-docker run --rm -i \
-  -v "../:/work" -w /work \
-  ghcr.io/yannh/kubeconform:latest \
-  "${args[@]}" "${K8S_FILES[@]}"
+tar -C "$REPO_ROOT" -cf - "${K8S_FILES[@]}" | \
+  docker run --rm -i ghcr.io/yannh/kubeconform:latest \
+    "${args[@]}" -
 status=$?
 set -e
 
