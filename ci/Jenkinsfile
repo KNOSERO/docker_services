@@ -24,7 +24,7 @@ pipeline {
                 [key: 'PR_NUMBER', value: '$.number',                 expressionType: 'JSONPath', defaultValue: ''],
                 [key: 'PR_SHA',    value: '$.pull_request.head.sha',  expressionType: 'JSONPath', defaultValue: '']
             ],
-            token: 'ravcube_docker_service'
+            token: 'ravcube_docker_service',
             printContributedVariables: true,
             printPostContent: false,
 
@@ -51,16 +51,6 @@ pipeline {
                             [$class: 'CleanBeforeCheckout']
                         ]
                     ])
-                    def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
-                    if (sha?.trim()) {
-                        githubNotify credentialsId: env.CREDITS_ID,
-                                     account: env.ACCOUNT,
-                                     repo: env.REPO,
-                                     sha: "${sha}",
-                                     context: env.PIPELINE_NAME,
-                                     status: 'PENDING',
-                                     description: 'Pipeline started'
-                    }
                 }
             }
         }
@@ -82,6 +72,24 @@ pipeline {
                         [$class: 'CleanBeforeCheckout']
                     ]
                 ])
+            }
+        }
+
+        stage('Init Pipeline Status') {
+            when { not { expression { env.PR_ACTION == 'opened' || env.PR_ACTION == 'reopened' || env.PR_ACTION == 'synchronize' } } }
+            steps {
+                script {
+                    def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
+                    if (sha?.trim()) {
+                        githubNotify credentialsId: env.CREDITS_ID,
+                                     account: env.ACCOUNT,
+                                     repo: env.REPO,
+                                     sha: "${sha}",
+                                     context: env.PIPELINE_NAME,
+                                     status: 'PENDING',
+                                     description: 'Pipeline started'
+                    }
+                }
             }
         }
 
