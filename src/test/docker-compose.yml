@@ -1,0 +1,22 @@
+version: '3.9'
+
+services:
+  dns:
+    container_name: dns
+    image: pihole/pihole:latest
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "67:67/udp"
+      - "82:80/tcp"
+    environment:
+      TZ: "Europe/Warsaw"
+    volumes:
+      - /mnt/core_data/docker/etc/pihole/:/etc/pihole
+      - /mnt/core_data/docker/etc/dnsmasq/etc-dnsmasq.d:/etc/dnsmasq.d
+    restart: always
+    networks:
+      - dnss
+
+networks:
+  dns:
