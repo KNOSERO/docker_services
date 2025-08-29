@@ -6,7 +6,7 @@ STRICT_CRD="${STRICT_CRD:-0}"
 SUMMARY="${SUMMARY:-1}"
 
 SEARCH_RE='(^|/)(manifest?)?)/.*\.y?ml$'
-EXCLUDE_RE='(templates/|values[^/]*\.ya?ml$)'
+EXCLUDE_RE='(templates/|values[^/]*\.y?ml$)'
 
 mapfile -d '' K8S_FILES < <(
     git ls-files -z | grep -zE "$SEARCH_RE" | grep -zEv "$EXCLUDE_RE" || true
