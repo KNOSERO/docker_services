@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   dns:
-    container_name: dns
+      container_name: dns
     image: pihole/pihole:latest
     ports:
       - "53:53/tcp"
