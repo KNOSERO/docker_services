@@ -13,7 +13,7 @@ pipeline {
         CREDITS_ID = 'github-token'
         SECRET_WEBHOOK = 'github-secret-webhook'
         ACCOUNT = 'KNOSERO'
-        REPO = 'docker_service'
+        REPO = 'docker_services'
         PIPELINE_NAME = 'docker_service_validate'
     }
 
