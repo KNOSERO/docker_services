@@ -10,7 +10,7 @@ mapfile -d '' K8S_FILES < <(
 )
 
 if ((${#K8S_FILES[@]}==0)); then
-    echo "No k3s/k8s manifest files to check (pattern: $SEARCH_RE)."
+    echo "No k3s/k8s manifest files to check."
     exit 0
 fi
 
