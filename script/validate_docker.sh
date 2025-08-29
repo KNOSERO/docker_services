@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 has_compose_v2() { docker compose version >/dev/null 2>&1; }
 has_compose_v1() { command -v docker-compose >/dev/null 2>&1; }
