@@ -5,7 +5,7 @@ STRICT="${STRICT:-1}"
 STRICT_CRD="${STRICT_CRD:-0}"
 SUMMARY="${SUMMARY:-1}"
 
-SEARCH_RE='(^|/)(k3s|k8s|kubernetes|manifests|apps|deploy(ments?)?)/.*\.ya?ml$'
+SEARCH_RE='(^|/)(k3s|k8s|kubernetes|manifest|manifests|apps|deploy(ments?)?)/.*\.ya?ml$'
 EXCLUDE_RE='(templates/|charts/|helm/|values[^/]*\.ya?ml$)'
 
 mapfile -d '' K8S_FILES < <(
