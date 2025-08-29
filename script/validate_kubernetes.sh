@@ -6,7 +6,7 @@ STRICT_CRD="${STRICT_CRD:-0}"
 SUMMARY="${SUMMARY:-1}"
 
 mapfile -d '' K8S_FILES < <(
-    git ls-files -z | grep -E '(^|/)(manifest([^/]*?)\.ya?ml$' || true
+    git ls-files | grep -E '(^|/)(manifest([^/]*?)\.ya?ml$' || true
 )
 
 if ((${#K8S_FILES[@]}==0)); then
