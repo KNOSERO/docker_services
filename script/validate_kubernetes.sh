@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 KUBE_VERSION="${KUBE_VERSION:-1.29.0}"
 STRICT="${STRICT:-1}"
@@ -8,7 +9,7 @@ SUMMARY="${SUMMARY:-1}"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 mapfile -t K8S_FILES < <(
-    git -C "$REPO_ROOT" ls-files | grep -E '(^|/)?manifests?/.*\.ya?ml$' || true
+    git -C "$REPO_ROOT" ls-files | grep -E '(^|/)manifest([^/]*?)\.ya?ml$' || true
 )
 
 if ((${#K8S_FILES[@]}==0)); then
