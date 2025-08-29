@@ -105,7 +105,7 @@ pipeline {
             }
         }
 
-        stage('Test Docker Compose') {
+        stage('Test Kubernetes Config') {
             steps {
                 script {
                     sh '''
