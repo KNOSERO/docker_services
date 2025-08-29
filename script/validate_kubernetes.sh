@@ -30,7 +30,7 @@ printf ' - %s\n' "${K8S_FILES[@]}"
 set +e
 docker run --rm -i \
   -v "/home/jenkins/agent/workspace/PR Docker Service":/work -w /work \
-  ghcr.io/yannh/kubeconform:latest-alpine \
+  ghcr.io/yannh/kubeconform:latest \
   "${args[@]}" "${K8S_FILES[@]}"
 status=$?
 set -e
