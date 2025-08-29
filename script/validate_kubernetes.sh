@@ -19,6 +19,6 @@ args=( -kubernetes-version "$KUBE_VERSION" )
 docker run --rm -i \
   -v "$PWD":/work -w /work \
   ghcr.io/yannh/kubeconform:latest-alpine \
-  "${args[@]}" "${K8S_FILES[@]}"
+  "${args[@]}" "${K8S_FILES[@]/$PWD\//}"
 
 echo "✓ Kubernetes/k3s YAML is valid (schema)."
