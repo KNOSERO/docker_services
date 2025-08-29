@@ -22,15 +22,9 @@ args=(-kubernetes-version "$KUBE_VERSION")
 [[ "$SUMMARY" == "1" ]] && args+=(-summary)
 [[ "$STRICT_CRD" != "1" ]] && args+=(-ignore-missing-schemas)
 
-echo "[DEBUG] PWD=$PWD"
-echo "[DEBUG] REPO_ROOT=$REPO_ROOT"
-echo "[DEBUG] Files to check:"
-printf ' - %s\n' "${K8S_FILES[@]}"
-
-MOUNT_PATH="$(realpath "$REPO_ROOT")"
 set +e
 docker run --rm -i \
-  -v "${MOUNT_PATH}:/work" -w /work \
+  -v "./:/work" -w /work \
   ghcr.io/yannh/kubeconform:latest \
   "${args[@]}" "${K8S_FILES[@]}"
 status=$?
