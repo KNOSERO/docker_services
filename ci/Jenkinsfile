@@ -24,7 +24,7 @@ pipeline {
                 [key: 'PR_NUMBER', value: '$.number',                 expressionType: 'JSONPath', defaultValue: ''],
                 [key: 'PR_SHA',    value: '$.pull_request.head.sha',  expressionType: 'JSONPath', defaultValue: '']
             ],
-            token: 'ravcube_docker_service'
+            token: 'ravcube_docker_service',
             printContributedVariables: true,
             printPostContent: false,
 
