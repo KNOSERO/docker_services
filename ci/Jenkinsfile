@@ -47,7 +47,8 @@ pipeline {
                         branches: [[ name: "origin/pr/${env.PR_NUMBER}/merge" ]],
                         extensions: [
                             [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
-                            [$class: 'PruneStaleBranch']
+                            [$class: 'PruneStaleBranch'],
+                            [$class: 'CleanBeforeCheckout']
                         ]
                     ])
                     def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
@@ -76,8 +77,9 @@ pipeline {
                     ]],
                     branches: [[ name: "*/${env.DEFAULT_BRANCH}" ]],
                     extensions: [
-                        [$class:'CloneOption', shallow:true, depth:25, noTags:true, timeout:240],
-                        [$class:'PruneStaleBranch']
+                        [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
+                        [$class: 'PruneStaleBranch'],
+                        [$class: 'CleanBeforeCheckout']
                     ]
                 ])
             }
