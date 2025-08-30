@@ -34,19 +34,35 @@ pipeline {
             }
         }
 
-        stage('Konfiguracja kluczy SSH') {
-            steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'id_home_lab', keyFileVariable: 'SSH_KEY')]) {
-                    sh '''
-                        mkdir -p /root/.ssh
-                        cp "$SSH_KEY" /root/.ssh/id_home_lab
-                        chmod 600 /root/.ssh/id_home_lab
-                       '''
+        stage('Init') {
+            parallel {
+                stage('Konfiguracja kluczy SSH') {
+                    steps {
+                        withCredentials([sshUserPrivateKey(credentialsId: 'id_home_lab', keyFileVariable: 'SSH_KEY')]) {
+                            sh '''
+                                mkdir -p /root/.ssh
+                                cp "$SSH_KEY" /root/.ssh/id_home_lab
+                                chmod 600 /root/.ssh/id_home_lab
+                               '''
+                        }
+                    }
+                }
+
+                stage('Init Submodules') {
+                    steps {
+                        script {
+                            sh '''
+                                git config --global url."https://github.com/".insteadOf "git@github.com:"
+                                git submodule sync --recursive
+                                git submodule update --init --recursive
+                            '''
+                        }
+                    }
                 }
             }
         }
 
-        stage('Wyciąganie sekretu z Jenkins Credentials') {
+        stage('Prepare Config') {
             steps {
                 script {
                     def credsMap = [
