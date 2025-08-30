@@ -42,7 +42,8 @@ pipeline {
                 }
             }
         }
-        stage('Test') {
+
+        stage('Checkout') {
             parallel {
                 stage('Checkout PR') {
                     when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
