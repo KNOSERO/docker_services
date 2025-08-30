@@ -20,7 +20,7 @@ pipeline {
         stage('Configure Triggers') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'webhookCredentials', variable: 'TOKEN_WEBHOOK')]) {
+                    withCredentials([string(credentialsId: 'docker_service_token', variable: 'TOKEN_WEBHOOK')]) {
                         properties([
                             pipelineTriggers([
                                 [
