@@ -36,7 +36,7 @@ pipeline {
 
         stage('Init') {
             parallel {
-                stage('Konfiguracja kluczy SSH') {
+                stage('SSH key configuration') {
                     steps {
                         withCredentials([sshUserPrivateKey(credentialsId: 'id_home_lab', keyFileVariable: 'SSH_KEY')]) {
                             sh '''
@@ -88,7 +88,7 @@ pipeline {
             }
         }
 
-        stage('Uruchamianie playbooka Ansible') {
+        stage('Run playbook Ansible') {
             environment {
                 ANSIBLE_HOST_KEY_CHECKING = 'False'
             }
