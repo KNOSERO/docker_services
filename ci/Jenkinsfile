@@ -42,95 +42,106 @@ pipeline {
                 }
             }
         }
-
-        stage('Checkout PR') {
-            when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
-            steps {
-                script {
-                    checkout([$class: 'GitSCM',
-                        userRemoteConfigs: [[
-                            name: 'origin',
-                            url: env.REPO_URL,
-                            credentialsId: env.CREDITS_ID,
-                            refspec: '+refs/heads/*:refs/remotes/origin/* +refs/pull/*:refs/remotes/origin/pr/*'
-                        ]],
-                        branches: [[ name: "origin/pr/${env.PR_NUMBER}/merge" ]],
-                        extensions: [
-                            [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
-                            [$class: 'PruneStaleBranch'],
-                            [$class: 'CleanBeforeCheckout']
-                        ]
-                    ])
+        stage('Test') {
+            parallel {
+                stage('Checkout PR') {
+                    when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
+                    steps {
+                        script {
+                            checkout([$class: 'GitSCM',
+                                userRemoteConfigs: [[
+                                    name: 'origin',
+                                    url: env.REPO_URL,
+                                    credentialsId: env.CREDITS_ID,
+                                    refspec: '+refs/heads/*:refs/remotes/origin/* +refs/pull/*:refs/remotes/origin/pr/*'
+                                ]],
+                                branches: [[ name: "origin/pr/${env.PR_NUMBER}/merge" ]],
+                                extensions: [
+                                    [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
+                                    [$class: 'PruneStaleBranch'],
+                                    [$class: 'CleanBeforeCheckout']
+                                ]
+                            ])
+                        }
+                    }
                 }
-            }
-        }
 
-        stage('Checkout Manual') {
-            when { not { expression { env.PR_ACTION in ['opened','reopened','synchronize'] } } }
-            steps {
-                checkout([$class: 'GitSCM',
-                    userRemoteConfigs: [[
-                        name: 'origin',
-                        url: env.REPO_URL,
-                        credentialsId: env.CREDITS_ID,
-                        refspec: '+refs/heads/*:refs/remotes/origin/*'
-                    ]],
-                    branches: [[ name: "*/${env.DEFAULT_BRANCH}" ]],
-                    extensions: [
-                        [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
-                        [$class: 'PruneStaleBranch'],
-                        [$class: 'CleanBeforeCheckout']
-                    ]
-                ])
-            }
-        }
-
-        stage('Init Pipeline Status') {
-            when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
-            steps {
-                script {
-                    def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
-                    if (sha?.trim()) {
-                        githubNotify credentialsId: env.CREDITS_ID,
-                                     account: env.ACCOUNT,
-                                     repo: env.REPO,
-                                     sha: "${sha}",
-                                     context: env.PIPELINE_NAME,
-                                     status: 'PENDING',
-                                     description: 'Pipeline started'
+                stage('Checkout Manual') {
+                    when { not { expression { env.PR_ACTION in ['opened','reopened','synchronize'] } } }
+                    steps {
+                        checkout([$class: 'GitSCM',
+                            userRemoteConfigs: [[
+                                name: 'origin',
+                                url: env.REPO_URL,
+                                credentialsId: env.CREDITS_ID,
+                                refspec: '+refs/heads/*:refs/remotes/origin/*'
+                            ]],
+                            branches: [[ name: "*/${env.DEFAULT_BRANCH}" ]],
+                            extensions: [
+                                [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
+                                [$class: 'PruneStaleBranch'],
+                                [$class: 'CleanBeforeCheckout']
+                            ]
+                        ])
                     }
                 }
             }
         }
 
-        stage('Init Submodules') {
-            steps {
-                script {
-                    sh '''
-                        git config --global url."https://github.com/".insteadOf "git@github.com:"
-                        git submodule sync --recursive
-                        git submodule update --init --recursive
-                    '''
+        stage('Init') {
+            parallel {
+                stage('Init Pipeline Status') {
+                    when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
+                    steps {
+                        script {
+                            def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
+                            if (sha?.trim()) {
+                                githubNotify credentialsId: env.CREDITS_ID,
+                                             account: env.ACCOUNT,
+                                             repo: env.REPO,
+                                             sha: "${sha}",
+                                             context: env.PIPELINE_NAME,
+                                             status: 'PENDING',
+                                             description: 'Pipeline started'
+                            }
+                        }
+                    }
+                }
+
+                stage('Init Submodules') {
+                    steps {
+                        script {
+                            sh '''
+                                git config --global url."https://github.com/".insteadOf "git@github.com:"
+                                git submodule sync --recursive
+                                git submodule update --init --recursive
+                            '''
+                        }
+                    }
                 }
             }
         }
 
-        stage('Test Docker Compose') {
-            steps {
-                script {
-                    sh '''
-                        bash ./script/validate_docker.sh
-                    '''
+        stage('Test') {
+            parallel {
+                stage('Test Docker Compose') {
+                    steps {
+                        script {
+                            sh '''
+                                bash ./script/validate_docker.sh
+                            '''
+                        }
+                    }
                 }
-            }
-        }
 
-        stage('Test Kubernetes Config') {
-            steps {
-                script {
-                    sh '''
-                        KUBE_VERSION=1.29.0 STRICT=1 STRICT_CRD=0 SUMMARY=1 bash ./script/validate_kubernetes.sh
-                    '''
+                stage('Test Kubernetes Config') {
+                    steps {
+                        script {
+                            sh '''
+                                KUBE_VERSION=1.29.0 STRICT=1 STRICT_CRD=0 SUMMARY=1 bash ./script/validate_kubernetes.sh
+                            '''
+                        }
+                    }
                 }
             }
         }
