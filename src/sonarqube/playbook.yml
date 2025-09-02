@@ -1,0 +1,13 @@
+- name: Deploy Prometheus
+  hosts: K3S
+  become: yes
+
+  vars:
+    host_path: "{{ playbook_dir }}"
+    server_dir: "{{ playbook_dir | basename }}"
+    kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+    namespace: "prometheus"
+
+  tasks:
+    - name: Run deploy_k3s.yml
+      include_tasks: ../../ansible/deploy_k3s.yml

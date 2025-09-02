@@ -1,0 +1,97 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sonarqube
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarqube
+  namespace: sonarqube
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarqube
+  template:
+    metadata:
+      labels:
+        app: sonarqube
+    spec:
+      containers:
+        - name: sonarqube
+          imagePullPolicy: Always
+          image: sonarqube:10-community
+          ports:
+            - containerPort: 9000
+          volumeMounts:
+            - name: data
+              mountPath: /opt/sonarqube/data
+            - name: extensions
+              mountPath: /opt/sonarqube/extensions
+          securityContext:
+            runAsUser: 0
+      volumes:
+        - name: data
+          hostPath:
+            path: /mnt/core_data/k3s/sonarqube
+            type: DirectoryOrCreate
+        - name: data
+          hostPath:
+            path: /mnt/core_data/k3s/extensions_sonarqube
+            type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarqube
+  namespace: sonarqube
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9000
+      targetPort: 9000
+  selector:
+    app: sonarqube
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sonarqube-docker-registry
+  namespace: sonarqube
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+    - host: sonarqube.k3s.ravnet
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarqube
+                port:
+                  number: 9000
+
+    - host: sonarqube.ravcube.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarqube
+                port:
+                  number: 9000
