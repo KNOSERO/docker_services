@@ -31,9 +31,6 @@ spec:
               mountPath: /opt/sonarqube/data
             - name: extensions
               mountPath: /opt/sonarqube/extensions
-          securityContext:
-            runAsUser: 999
-            fsGroup: 999
       volumes:
         - name: data
           hostPath:
