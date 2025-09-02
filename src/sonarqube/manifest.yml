@@ -38,7 +38,7 @@ spec:
           hostPath:
             path: /mnt/core_data/k3s/sonarqube
             type: DirectoryOrCreate
-        - name: data
+        - name: extensions
           hostPath:
             path: /mnt/core_data/k3s/extensions_sonarqube
             type: DirectoryOrCreate
