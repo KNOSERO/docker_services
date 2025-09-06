@@ -5,12 +5,15 @@
 [submodule "database/postgreSQL"]
 	path = database/postgreSQL
 	url = git@github.com:KNOSERO/service_postgreSQL.git
+
 [submodule "dev/sonarqube"]
 	path = dev/sonarqube
 	url = git@github.com:KNOSERO/sonarqube_service.git
+
 [submodule "infrastructure/grafana"]
 	path = infrastructure/grafana
 	url = git@github.com:KNOSERO/grafana_service.git
+
 [submodule "infrastructure/prometheus"]
 	path = infrastructure/prometheus
 	url = git@github.com:KNOSERO/prometheus_service.git
