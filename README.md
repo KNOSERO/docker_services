@@ -39,3 +39,4 @@ A repository with configuration files for Docker and Kubernetes-based services.
 ##### Kubernetes
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/template_service_k3s)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Template%20Service%20K3s&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Template%20Service%20K3s/lastBuild/pipeline-overview/)
+
