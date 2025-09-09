@@ -2,6 +2,10 @@
 	path = template/k3s
 	url = git@github.com:KNOSERO/template_service_k3s.git
 
+[submodule "template/docker"]
+	path = template/docker
+	url = git@github.com:KNOSERO/template_service_docker.git
+
 [submodule "database/postgreSQL"]
 	path = database/postgreSQL
 	url = git@github.com:KNOSERO/service_postgreSQL.git
