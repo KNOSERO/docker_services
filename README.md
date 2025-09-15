@@ -7,22 +7,30 @@ A repository with configuration files for Docker and Kubernetes-based services.
 ### Database
 
 ##### Postgresql
+PostgreSQL an open-source relational database used for storing and managing application data.
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/service_postgreSQL)
-[![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Template%20Service%20K3s&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Template%20Service%20K3s/lastBuild/pipeline-overview/)
+[![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20PostgreSQL%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20PostgreSQL%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/service_postgreSQL?style=plastic)](https://github.com/KNOSERO/service_postgreSQL/blob/master/LICENSE)
 
 ### Dev
 ##### Jenkins
+Jenkins a CI/CD server for automating application build, test, and deployment processes
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/jenkins_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Jenkins%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Jenkins%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/jenkins_service?style=plastic)](https://github.com/KNOSERO/jenkins_service/blob/master/LICENSE)
 
 ##### Nexus
+Nexus Repository an artifact management system for hosting, storing, and distributing packages and Docker images
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/nexus_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Nexus%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Nexus%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/nexus_service?style=plastic)](https://github.com/KNOSERO/nexus_service/blob/master/LICENSE)
 
 ##### Sonarqube
+SonarQube a tool for code quality analysis, identifying bugs, and detecting security vulnerabilities
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/sonarqube_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20SonarQube%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20SonarQube%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/sonarqube_service?style=plastic)](https://github.com/KNOSERO/sonarqube_service/blob/master/LICENSE)
