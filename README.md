@@ -71,6 +71,13 @@ Deployment of Nginx with a management interface
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Proxy%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Proxy%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/proxy_service?style=plastic)](https://github.com/KNOSERO/proxy_service/blob/master/LICENSE)
 
+### VPN
+Vanguard VPN a solution providing secure and encrypted connections to the local network and remote access.
+
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/vpn_service)
+[![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20VPN%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20VPN%20Service/lastBuild/pipeline-overview/)
+[![License](https://img.shields.io/github/license/KNOSERO/vpn_service?style=plastic)](https://github.com/KNOSERO/vpn_service/blob/master/LICENSE)
+
 ## Template
 ### Docker
 Application deployment template for docker
