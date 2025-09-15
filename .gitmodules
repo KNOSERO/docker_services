@@ -2,6 +2,10 @@
 	path = template/k3s
 	url = git@github.com:KNOSERO/template_service_k3s.git
 
+[submodule "template/docker"]
+	path = template/docker
+	url = git@github.com:KNOSERO/template_service_docker.git
+
 [submodule "database/postgreSQL"]
 	path = database/postgreSQL
 	url = git@github.com:KNOSERO/service_postgreSQL.git
@@ -17,3 +21,27 @@
 [submodule "infrastructure/prometheus"]
 	path = infrastructure/prometheus
 	url = git@github.com:KNOSERO/prometheus_service.git
+
+[submodule "infrastructure/proxy"]
+	path = infrastructure/proxy
+	url = git@github.com:KNOSERO/proxy_service.git
+
+[submodule "infrastructure/portainer"]
+	path = infrastructure/portainer
+	url = git@github.com:KNOSERO/portainer_service.git
+
+[submodule "infrastructure/dns"]
+	path = infrastructure/dns
+	url = git@github.com:KNOSERO/dns_service.git
+
+[submodule "dev/nexus"]
+	path = dev/nexus
+	url = git@github.com:KNOSERO/nexus_service.git
+
+[submodule "dev/jenkins"]
+	path = dev/jenkins
+	url = git@github.com:KNOSERO/jenkins_service.git
+
+[submodule "infrastructure/vpn"]
+	path = infrastructure/vpn
+	url = git@github.com:KNOSERO/vpn_service.git
