@@ -29,37 +29,51 @@ A repository with configuration files for Docker and Kubernetes-based services.
 
 ### Infrastructure
 ##### DNS
+Pi-hole central DNS for the local network
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/dns_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20DNS%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20DNS%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/dns_service?style=plastic)](https://github.com/KNOSERO/dns_service/blob/master/LICENSE)
 
 ##### Grafana
+Grafana graphical panel for visualizing, analyzing, and monitoring metrics from systems and applications.
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/grafana_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Grafana%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Grafana%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/grafana_service?style=plastic)](https://github.com/KNOSERO/grafana_service/blob/master/LICENSE)
 
 ##### Portainer
+Portainer graphical panel enabling control and monitoring of Docker Swarm and Kubernetes clusters.
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/portainer_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Portainer%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Portainer%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/portainer_service?style=plastic)](https://github.com/KNOSERO/portainer_services/blob/master/LICENSE)
 
 ##### Prometheus
+Prometheus tool for monitoring and collecting system and application metrics
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/prometheus_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Prometheus%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Prometheus%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/prometheus_service?style=plastic)](https://github.com/KNOSERO/prometheus_service/blob/master/LICENSE)
 
 ##### Proxy
+Deployment of Nginx with a management interface
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/proxy_service)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Proxy%20Service&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Proxy%20Service/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/proxy_service?style=plastic)](https://github.com/KNOSERO/proxy_service/blob/master/LICENSE)
 
 ### Template
 ##### Docker
+Application deployment template for docker
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/template_service_docker)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Template%20Service%20Docker&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Template%20Service%20Docker/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/template_service_docker?style=plastic)](https://github.com/KNOSERO/template_service_docker/blob/master/LICENSE)
 
 ##### Kubernetes
+Application deployment template for k3s
+
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/template_service_k3s)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Template%20Service%20K3s&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Template%20Service%20K3s/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/template_service_k3s?style=plastic)](https://github.com/KNOSERO/template_service_k3s/blob/master/LICENSE)
