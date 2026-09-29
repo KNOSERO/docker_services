@@ -1,6 +1,21 @@
 # Docker Services
 A repository with configuration files for Docker and Kubernetes-based services.
 
+## Homelab services installer
+
+Prerequisites: Podman Compose locally, mounted storage on `onyx` and `ruby`,
+and the SSH files `secrets/id_home_lab` and `secrets/id_home_lab.pub`.
+
+Run the installer from the repository root:
+
+```powershell
+podman compose -f docker/services/compose.yml run --rm --build services-installer
+```
+
+It prepares the Docker networks, deploys DNS to both hosts, and deploys proxy
+and Portainer to `ruby`. Re-running it pulls images and recreates containers
+without removing data under `/mnt/core_data`.
+
 -----
 
 # Subproject

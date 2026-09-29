@@ -1,0 +1,28 @@
+---
+- name: Prepare Docker networks
+  hosts: homelab
+  become: true
+  become_flags: -n
+  tasks:
+    - name: Check required DNS network
+      ansible.builtin.command: docker network inspect dns
+      register: dns_network
+      changed_when: false
+      failed_when: false
+
+    - name: Create required DNS network
+      ansible.builtin.command: docker network create dns
+      when: dns_network.rc != 0
+
+    - name: Check required proxy network on ruby
+      ansible.builtin.command: docker network inspect proxy
+      register: proxy_network
+      changed_when: false
+      failed_when: false
+      when: inventory_hostname == 'ruby'
+
+    - name: Create required proxy network on ruby
+      ansible.builtin.command: docker network create proxy
+      when:
+        - inventory_hostname == 'ruby'
+        - proxy_network.rc != 0
