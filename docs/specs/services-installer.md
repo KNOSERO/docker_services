@@ -14,9 +14,9 @@ to `onyx` and `ruby` using the existing homelab SSH convention, prepares the
 required Docker networks, and deploys the existing DNS, proxy, and Portainer
 service definitions in a deterministic order.
 
-DNS runs on both hosts. Proxy and Portainer run only on `ruby`. Repeated runs
-pull images and recreate containers while preserving data under
-`/mnt/core_data`.
+DNS runs on both hosts. Proxy and Portainer run only on `ruby`. Jenkins is
+deployed to the existing K3s cluster with Helm. Repeated runs pull images and
+recreate containers while preserving data under `/mnt/core_data`.
 
 ## User Stories
 
@@ -40,15 +40,19 @@ pull images and recreate containers while preserving data under
 18. As a maintainer, I want Compose syntax validated, so that malformed service configuration is caught before deployment.
 19. As a maintainer, I want the installer to report the current stage and target host, so that operational failures can be diagnosed without reading implementation details.
 20. As a maintainer, I want existing individual service playbooks preserved, so that current CI and manual workflows continue to work.
+21. As a homelab operator, I want Jenkins installed on the existing K3s cluster, so that it runs alongside the Kubernetes services without Docker Compose.
+22. As a homelab operator, I want the installer to use a private kubeconfig mounted from `secrets`, so that it can authenticate to K3s without storing credentials in the image.
 
 ## Implementation Decisions
 
 - Build one local installer container containing Ansible, SSH tooling, the host inventory, and the orchestration entrypoint.
+- Include a pinned Helm client and the Jenkins service submodule in the installer image.
 - Run the installer with Podman Compose and mount the existing secrets directory read-only.
+- Read the K3s kubeconfig from `secrets/kubeconfig-k3s.yaml` and use it to install or upgrade the Jenkins Helm release.
 - Use SSH user `rav`, key `id_home_lab`, `onyx` at `192.168.0.2`, and `ruby` at `192.168.0.3`.
 - Reuse the existing service playbooks and Compose definitions instead of duplicating deployment logic.
 - Ensure the Docker networks required by DNS and proxy exist on the target hosts before service deployment.
-- Execute stages in this order: prepare Docker networks, deploy DNS to `onyx`, deploy DNS to `ruby`, deploy proxy to `ruby`, deploy Portainer to `ruby`.
+- Execute stages in this order: prepare Docker networks, deploy DNS to `onyx`, deploy DNS to `ruby`, deploy proxy to `ruby`, deploy Portainer to `ruby`, then install or upgrade Jenkins on K3s.
 - Stop immediately when any stage fails and return a non-zero exit status.
 - Keep deployment repeatable by pulling images and using forced Compose recreation with orphan cleanup.
 - Preserve persistent data by retaining the existing host volume mappings.
@@ -57,8 +61,8 @@ pull images and recreate containers while preserving data under
 
 ## Testing Decisions
 
-- Test the complete installer container at its external orchestration seam with SSH/Ansible behavior mocked.
-- Assert stage order, target hosts, network creation, service placement, fail-fast behavior, and repeat-run Compose options.
+- Test the complete installer container at its external orchestration seam with SSH, Ansible, and Helm behavior mocked.
+- Assert stage order, target hosts, network creation, service placement, Helm release/chart/values/kubeconfig arguments, fail-fast behavior, and repeat-run Compose options.
 - Test that persistent volume mappings are passed through unchanged.
 - Validate every Compose definition with the available Compose config command.
 - Test only observable commands, targets, and outcomes; do not test shell helper structure.
@@ -69,13 +73,16 @@ pull images and recreate containers while preserving data under
 - Installing Docker itself on the target hosts; Docker is already installed.
 - Changing the service images, exposed ports, persistent storage layout, or application settings except for proxy DNS addresses.
 - Replacing the existing individual service playbooks.
-- Installing K3s, NFS, GlusterFS, or other host infrastructure.
+- Installing K3s, NFS, GlusterFS, or other host infrastructure. K3s and its kubeconfig must already exist.
 - Adding TLS or authentication changes to Docker or SSH.
 - Adding a service dashboard, web UI, or long-running installer daemon.
 - Synchronizing Pi-hole state beyond the existing shared storage configuration.
 
 ## Further Notes
 
-The installer must be run only after the target storage paths are mounted and
-the SSH key is available in the repository's secrets convention. The DNS
-service intentionally remains active on both hosts.
+The installer must be run only after the target storage paths are mounted, the
+SSH key is available, and `secrets/kubeconfig-k3s.yaml` points to a K3s API
+endpoint reachable from the installer container. The old Docker socket mount
+is not passed to Jenkins; Jenkins image builds require a Kubernetes-native
+builder or agent setup. The DNS service intentionally remains active on both
+hosts.
