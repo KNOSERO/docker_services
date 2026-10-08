@@ -1,0 +1,96 @@
+@Library('jenkins_shared_lib') _
+
+pipeline {
+    agent {
+        label 'k3s'
+    }
+    options {
+        skipDefaultCheckout();
+        timestamps();
+        ansiColor('xterm')
+    }
+    environment {
+        CREDITS_ID = 'github-token'
+    }
+    stages {
+        stage('Init ENV') {
+            steps {
+                script {
+                    initEnv()
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                checkoutBranch("${env.BRANCH}")
+            }
+        }
+
+        stage('Init') {
+            parallel {
+                stage('Init Submodules') {
+                    steps {
+                        script {
+                            initSubmodules()
+                        }
+                    }
+                }
+
+                stage('Init K3s config') {
+                    steps {
+                        script {
+                            configureK3s()
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Copy Config') {
+            steps {
+                script {
+                    if (fileExists('config')) {
+                        sh '''
+                            mkdir -p ./helm/config && cp -r config/* ./helm/config/
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Test Lint') {
+            steps {
+                script {
+                    sh '''
+                        helm lint ./helm -f config.yml
+                        helm template ./helm -f config.yml
+                    '''
+                }
+            }
+        }
+        stage('Dry Run Test') {
+            steps {
+                script {
+                    sh '''
+                        helm upgrade --install jenkins ./helm \
+                            -f config.yml \
+                            --kubeconfig kubeconfig.yaml \
+                            --dry-run --debug
+                    '''
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                script {
+                    sh '''
+                        helm upgrade --install jenkins ./helm \
+                            -f config.yml \
+                            --kubeconfig kubeconfig.yaml
+                    '''
+                }
+            }
+        }
+    }
+}

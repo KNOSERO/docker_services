@@ -1,0 +1,127 @@
+pipeline {
+  agent any
+
+  environment {
+    RELEASE_NAME = 'services-panel'
+    NAMESPACE = 'services'
+  }
+
+  stages {
+    stage('Prepare K3s kubeconfig') {
+      steps {
+        withCredentials([
+          string(credentialsId: 'jenkins-k3s', variable: 'K8S_TOKEN'),
+          string(credentialsId: 'jenkins-k3s-ca-cert', variable: 'CA_DATA'),
+          string(credentialsId: 'jenkins-k3s-server-url', variable: 'SERVER')
+        ]) {
+          sh '''
+            set +x
+            cat > kubeconfig.yaml <<EOF
+            apiVersion: v1
+            kind: Config
+            clusters:
+            - name: selected
+              cluster:
+                server: ${SERVER}
+                certificate-authority-data: ${CA_DATA}
+            contexts:
+            - name: panel
+              context:
+                cluster: selected
+                user: panel
+                namespace: ${NAMESPACE}
+            current-context: panel
+            users:
+            - name: panel
+              user:
+                token: ${K8S_TOKEN}
+            EOF
+            chmod 600 kubeconfig.yaml
+          '''
+        }
+      }
+    }
+    stage('Validate chart') {
+      steps {
+        sh '''
+          helm lint services/panel/helm
+          helm template "$RELEASE_NAME" services/panel/helm --namespace "$NAMESPACE"
+        '''
+      }
+    }
+    stage('Build and publish panel image') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'ghcr-package', usernameVariable: 'GHCR_USERNAME', passwordVariable: 'GHCR_TOKEN')]) {
+          sh '''
+            set +x
+            trap 'podman logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            printf '%s' "$GHCR_TOKEN" | podman login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+            podman build --file panel/Dockerfile --tag "ghcr.io/knosero/docker-services-panel:$BUILD_NUMBER" .
+            podman push "ghcr.io/knosero/docker-services-panel:$BUILD_NUMBER"
+          '''
+        }
+      }
+    }
+    stage('Prepare image pull secret') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'ghcr-package', usernameVariable: 'GHCR_USERNAME', passwordVariable: 'GHCR_TOKEN')]) {
+          sh '''
+            set +x
+            kubectl --kubeconfig kubeconfig.yaml create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl --kubeconfig kubeconfig.yaml apply -f -
+            docker_config=$(mktemp)
+            trap 'rm -f "$docker_config"' EXIT
+            auth=$(printf '%s:%s' "$GHCR_USERNAME" "$GHCR_TOKEN" | base64 -w0)
+            printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$auth" > "$docker_config"
+            chmod 600 "$docker_config"
+            kubectl --kubeconfig kubeconfig.yaml create secret generic ghcr-pull --namespace "$NAMESPACE" --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$docker_config" --dry-run=client -o yaml | kubectl --kubeconfig kubeconfig.yaml apply -f -
+          '''
+        }
+      }
+    }
+    stage('Prepare panel target credentials') {
+      steps {
+        withCredentials([
+          string(credentialsId: 'jenkins-k3s', variable: 'K8S_TOKEN'),
+          string(credentialsId: 'jenkins-k3s-ca-cert', variable: 'CA_DATA'),
+          file(credentialsId: 'panel-docker-ssh-key', variable: 'DOCKER_SSH_KEY'),
+          file(credentialsId: 'panel-docker-known-hosts', variable: 'DOCKER_KNOWN_HOSTS')
+        ]) {
+          sh '''
+            set +x
+            set -eu
+            secret_dir=$(mktemp -d)
+            trap 'rm -rf "$secret_dir"' EXIT
+            printf '%s' "$K8S_TOKEN" > "$secret_dir/k3s-token"
+            printf '%s' "$CA_DATA" | base64 -d > "$secret_dir/k3s-ca.crt"
+            cp "$DOCKER_SSH_KEY" "$secret_dir/id_home_lab"
+            cp "$DOCKER_KNOWN_HOSTS" "$secret_dir/known_hosts"
+            chmod 600 "$secret_dir"/*
+            kubectl --kubeconfig kubeconfig.yaml create secret generic services-panel-target-secrets \
+              --namespace "$NAMESPACE" \
+              --from-file=k3s-token="$secret_dir/k3s-token" \
+              --from-file=k3s-ca.crt="$secret_dir/k3s-ca.crt" \
+              --from-file=id_home_lab="$secret_dir/id_home_lab" \
+              --from-file=known_hosts="$secret_dir/known_hosts" \
+              --dry-run=client -o yaml | kubectl --kubeconfig kubeconfig.yaml apply -f -
+          '''
+        }
+      }
+    }
+    stage('Install panel') {
+      steps {
+        sh '''
+          helm upgrade --install "$RELEASE_NAME" services/panel/helm \
+            --namespace "$NAMESPACE" --create-namespace \
+            --set image.tag="$BUILD_NUMBER" \
+            --kubeconfig kubeconfig.yaml
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      sh 'rm -f kubeconfig.yaml'
+    }
+  }
+}

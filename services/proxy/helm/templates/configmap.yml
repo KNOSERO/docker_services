@@ -1,0 +1,28 @@
+{{- if .Values.configMaps }}
+{{- range .Values.configMaps }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .name }}-config
+  namespace: {{ $.Values.namespace }}
+data:
+{{- $files := $.Files.Glob .path }}
+{{- range $path, $file := $files }}
+  {{ base $path }}: |-
+{{ toString $file | indent 4 }}
+{{- end }}
+---
+{{- end }}
+{{- end }}
+{{- if .Values.configFiles }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-config
+  namespace: {{ .Values.namespace }}
+data:
+  {{- range $filename, $contents := .Values.configFiles }}
+  {{ $filename | quote }}: |-
+    {{- $contents | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,16 @@
+services:
+  services-panel:
+    build:
+      context: ../..
+      dockerfile: panel/Dockerfile
+    container_name: services-panel
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6868:6868"
+    environment:
+      PORT: "6868"
+      PANEL_BIND_HOST: 0.0.0.0
+      PANEL_SECRETS_DIR: /app/secrets
+    volumes:
+      - ../../.config:/app/.config
+      - ../../secrets:/app/secrets:ro

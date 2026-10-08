@@ -107,3 +107,35 @@ Application deployment template for k3s
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github&style=plastic)](https://github.com/KNOSERO/template_service_k3s)
 [![Build Status](https://jenkins.ravcube.com/buildStatus/icon?job=PR%20Public/PR%20Template%20Service%20K3s&style=plastic)](https://jenkins.ravcube.com/job/PR%20Public/job/PR%20Template%20Service%20K3s/lastBuild/pipeline-overview/)
 [![License](https://img.shields.io/github/license/KNOSERO/template_service_k3s?style=plastic)](https://github.com/KNOSERO/template_service_k3s/blob/master/LICENSE)
+
+## Services control panel
+
+Run the local Podman controller from the repository root:
+
+```bash
+podman compose -f docker/panel/compose.yml up -d --build
+```
+
+Open `http://127.0.0.1:6868`. Target profiles and saved service settings live in
+the ignored `.config/` directory. Secret files remain under `secrets/` and are
+mounted read-only. The panel binds to localhost in Podman mode.
+
+The K3s chart is in `services/panel/helm`; its service is ClusterIP and its
+Ingress is disabled by default. `admin.ravcube.com` is prepared as the future
+Ingress host. The deployment Jenkinsfile follows the existing K3s credential
+IDs and removes its temporary kubeconfig after the install.
+
+The K3s Jenkins job builds and publishes the panel image before installing it, then creates the ghcr-pull Kubernetes Secret. Configure a Jenkins username/password credential named ghcr-package with permission to publish and pull the GHCR package.
+
+The K3s job creates `services-panel-target-secrets` from `jenkins-k3s`, `jenkins-k3s-ca-cert`, and Jenkins Secret file credentials `panel-docker-ssh-key` (private key) and `panel-docker-known-hosts` (pinned host keys). These target credentials are mounted separately from application secrets. Create `services-panel-secrets` with the application secret files you use; the Jenkins job leaves this Secret untouched:
+
+```bash
+kubectl create secret generic services-panel-secrets --namespace services \
+  --from-file=postgres_password=secrets/postgres_password \
+  --from-file=grafana_password=secrets/grafana_password \
+  --from-file=vpn_password_hash=secrets/vpn_password_hash
+```
+
+Remove entries for services whose secret files are not present.
+
+Set each K3s target API endpoint in its editable profile.

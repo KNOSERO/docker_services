@@ -1,0 +1,118 @@
+{
+  "name": "vpn",
+  "namespace": "vpn",
+  "replicas": 1,
+  "image": {
+    "repository": "ghcr.io/wg-easy/wg-easy",
+    "tag": "latest",
+    "pullPolicy": "IfNotPresent"
+  },
+  "service": {
+    "type": "ClusterIP"
+  },
+  "ports": [
+    51820,
+    51821
+  ],
+  "servicePorts": [
+    {
+      "name": "wireguard",
+      "port": 51820,
+      "targetPort": 51820,
+      "protocol": "UDP"
+    },
+    {
+      "name": "web",
+      "port": 83,
+      "targetPort": 51821
+    }
+  ],
+  "containerPorts": [
+    {
+      "containerPort": 51820,
+      "protocol": "UDP"
+    },
+    {
+      "containerPort": 51821,
+      "protocol": "TCP"
+    }
+  ],
+  "env": [
+    {
+      "name": "LANG",
+      "value": "pl"
+    },
+    {
+      "name": "WG_HOST",
+      "value": "ravcube.com"
+    },
+    {
+      "name": "PORT",
+      "value": "51821"
+    },
+    {
+      "name": "WG_PORT",
+      "value": "51820"
+    },
+    {
+      "name": "WG_DEFAULT_DNS",
+      "value": "192.168.0.5,192.168.0.6"
+    },
+    {
+      "name": "WG_ALLOWED_IPS",
+      "value": "0.0.0.0/0,::/0,192.168.0.0/24"
+    },
+    {
+      "name": "PASSWORD_HASH",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "vpn-secrets",
+          "key": "vpn_password_hash"
+        }
+      }
+    }
+  ],
+  "runAsUser": 0,
+  "volumes": [
+    {
+      "name": "data",
+      "hostPath": "/mnt/core_data/docker/etc/wireguard",
+      "mountPath": "/etc/wireguard"
+    },
+    {
+      "name": "tun",
+      "hostPath": "/dev/net/tun",
+      "mountPath": "/dev/net/tun",
+      "type": "CharDevice"
+    }
+  ],
+  "containerSecurityContext": {
+    "capabilities": {
+      "add": [
+        "NET_ADMIN"
+      ]
+    }
+  },
+  "podSecurityContext": {
+    "sysctls": [
+      {
+        "name": "net.ipv4.conf.all.src_valid_mark",
+        "value": "1"
+      },
+      {
+        "name": "net.ipv4.ip_forward",
+        "value": "1"
+      }
+    ]
+  },
+  "hostNetwork": true,
+  "configMounts": [],
+  "configMaps": [],
+  "ingress": {
+    "hosts": []
+  },
+  "secrets": {
+    "enabled": true,
+    "name": "vpn-secrets"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "services": {
+    "prometheus": {
+      "container_name": "prometheus",
+      "image": "prom/prometheus:latest",
+      "restart": "unless-stopped",
+      "ports": [
+        "9090:9090"
+      ],
+      "volumes": [
+        "/mnt/core_data/prometheus:/prometheus",
+        "/opt/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      ],
+      "environment": {},
+      "command": [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--storage.tsdb.path=/prometheus"
+      ]
+    }
+  }
+}

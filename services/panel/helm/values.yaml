@@ -1,0 +1,24 @@
+image:
+  repository: ghcr.io/knosero/docker-services-panel
+  tag: latest
+  pullPolicy: IfNotPresent
+  pullSecretName: ghcr-pull
+
+service:
+  type: ClusterIP
+  port: 6868
+
+persistence:
+  storageClass: ""
+  size: 1Gi
+
+secrets:
+  name: services-panel-secrets
+
+targetCredentials:
+  name: services-panel-target-secrets
+
+ingress:
+  enabled: false
+  className: nginx
+  host: admin.ravcube.com

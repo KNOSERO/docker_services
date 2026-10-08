@@ -1,0 +1,6 @@
+.git
+.config
+secrets
+**/node_modules
+**/.git
+**/.gitmodules

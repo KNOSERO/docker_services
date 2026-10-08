@@ -1,0 +1,78 @@
+{
+  "name": "postgresql",
+  "namespace": "postgresql",
+  "replicas": 1,
+  "image": {
+    "repository": "postgres",
+    "tag": "16",
+    "pullPolicy": "IfNotPresent",
+    "args": [
+      "-c",
+      "config_file=/etc/postgresql/postgresql.conf"
+    ]
+  },
+  "service": {
+    "type": "ClusterIP"
+  },
+  "ports": [
+    5432
+  ],
+  "servicePorts": [
+    {
+      "name": "postgres",
+      "port": 5432,
+      "targetPort": 5432
+    }
+  ],
+  "containerPorts": [
+    {
+      "containerPort": 5432,
+      "protocol": "TCP"
+    }
+  ],
+  "env": [
+    {
+      "name": "POSTGRES_DB",
+      "value": "app"
+    },
+    {
+      "name": "POSTGRES_USER",
+      "value": "app"
+    },
+    {
+      "name": "POSTGRES_PASSWORD_FILE",
+      "value": "/run/secrets/postgres_password"
+    }
+  ],
+  "runAsUser": 0,
+  "volumes": [
+    {
+      "name": "data",
+      "hostPath": "/mnt/core_data/postgresql",
+      "mountPath": "/var/lib/postgresql/data"
+    }
+  ],
+  "hostNetwork": false,
+  "configMounts": [
+    {
+      "name": "postgresql-config",
+      "configMap": "postgresql-config",
+      "mountPath": "/etc/postgresql/postgresql.conf",
+      "subPath": "postgresql.conf",
+      "readOnly": true
+    }
+  ],
+  "configMaps": [
+    {
+      "name": "postgresql",
+      "path": "config/postgresql.conf"
+    }
+  ],
+  "ingress": {
+    "hosts": []
+  },
+  "secrets": {
+    "enabled": true,
+    "name": "postgresql-secrets"
+  }
+}

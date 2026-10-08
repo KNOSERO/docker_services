@@ -1,0 +1,46 @@
+name: postgresql
+namespace: postgresql
+replicas: 1
+
+image:
+  repository: postgres
+  tag: "16"
+  pullPolicy: IfNotPresent
+  args:
+    - "-c"
+    - "config_file=/etc/postgresql/postgresql.conf"
+
+service:
+  type: ClusterIP
+
+env:
+  - name: POSTGRES_USER
+    value: app
+  - name: POSTGRES_PASSWORD_FILE
+    value: /run/secrets/postgres_password
+  - name: POSTGRES_DB
+    value: app
+
+runAsUser: 0
+
+ports:
+  - 5432
+
+volumes:
+  - name: data
+    mountPath: /var/lib/postgresql/data
+    hostPath: /mnt/core_data/postgresql
+
+configMounts:
+  - name: postgresql-config
+    configMap: postgresql-config
+    mountPath: /etc/postgresql/postgresql.conf
+    subPath: postgresql.conf
+    readOnly: true
+
+configMaps:
+  - name: postgresql
+    path: config/postgresql.conf
+
+ingress:
+  hosts: []
