@@ -1,16 +1,6 @@
-{
-  "common": {
-    "image": "pihole/pihole:latest",
-    "webPort": "82",
-    "dnsPort": "53",
-    "timezone": "Europe/Warsaw",
-    "dataPath": "/mnt/core_data/pihole"
-  },
-  "docker": {
-    "network": "dns"
-  },
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
-  }
-}
+common:
+  image: pihole/pihole:latest
+  webPort: "82"
+  dnsPort: "53"
+  timezone: Europe/Warsaw
+  dataPath: /mnt/core_data/pihole

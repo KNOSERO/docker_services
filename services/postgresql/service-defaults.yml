@@ -4,9 +4,5 @@ common:
   database: app
   username: app
   passwordSecret: postgres_password
-  configFile: config/postgresql.conf
   dataPath: /mnt/core_data/postgresql
-docker: {}
-k3s:
-  ingressHost: ""
-  ingressEnabled: "false"
+  configMountPath: /etc/postgresql/postgresql.conf

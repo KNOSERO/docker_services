@@ -23,7 +23,7 @@ The panel is an operator interface for the existing service installers. It does 
 7. As a homelab operator, I want K3s target profiles to identify the API endpoint and credential references, so that the panel can use the selected cluster.
 8. As a homelab operator, I want the form to show fields for the selected service, backend, and target profile, so that I only edit relevant deployment settings.
 9. As a homelab operator, I want each service/backend/target combination to have its own saved settings, so that different hosts and clusters can use different ports, paths, networks, and application options.
-10. As a homelab operator, I want forms to expose service-specific settings such as images, ports, environment values, volumes, networks, ingress, and configuration files, so that I can change deployments without editing generic manifests manually.
+10. As a homelab operator, I want forms to expose the agreed common settings such as image, ports, non-secret environment values, data paths, and config mount paths, so that I can adjust a service without editing manifests manually.
 11. As a homelab operator, I want **Save** to persist settings without deploying, so that I can review changes before they affect a target.
 12. As a homelab operator, I want **Deploy** to use the saved settings for the selected service/backend/target, so that deployment is an explicit operation.
 13. As a homelab operator, I want invalid configurations to be rejected before deployment, so that malformed Compose or Helm settings do not reach a target.
@@ -48,12 +48,12 @@ The panel is an operator interface for the existing service installers. It does 
 - The main navigation provides service operations, target profiles, job history, and job details/logs.
 - Target profiles are stored in `.config/targets.yml`. Service overrides are stored separately for each service/backend/target under `.config/services/`.
 - `.config/` is local application state, ignored by Git, and persisted through a host bind mount in Podman or a persistent volume in K3s.
-- Checked-in Compose, playbook, Helm, and configuration files remain deployment bases. Saving a form writes the selected local override and does not silently edit a checked-in service file.
+- The repository has one shared Docker template under `templates/docker/` and one shared K3s Helm chart under `templates/k3s/helm/`; both render every managed service. Saving a form writes only the selected local override and does not edit checked-in templates.
 - Target profiles store non-secret connection settings and references to secret files. They do not contain credential values.
 - Secrets continue to be loaded from the existing `secrets/` directory in local mode, mounted read-only. In K3s, Jenkins supplies target credentials (`k3s-token`, `k3s-ca.crt`, `id_home_lab`, and `known_hosts`) through `services-panel-target-secrets`; application secret files stay in the separate, optional `services-panel-secrets` Secret so Jenkins does not overwrite them. The panel does not expose secret contents back to the browser or save them in `.config/`.
 - K3s deployment follows the current Jenkinsfile credential pattern: load the API endpoint, CA certificate, and token from secrets, compose a temporary kubeconfig for the job, and invoke Helm with it. The temporary kubeconfig is not written to persistent configuration or logs.
-- Docker deployment uses the selected SSH target and the service's Docker/Compose/Ansible deployment assets.
-- K3s deployment uses the selected K3s target and the service's Helm deployment assets. Existing validation and install/upgrade behavior is retained where applicable.
+- Docker deployment uses the selected SSH target and the shared Compose/Ansible template, filled with the selected service YAML and target values.
+- K3s deployment uses the selected K3s target and the shared Helm chart, filled with the selected service YAML and target values.
 - The existing service audit is the starting inventory for the forms. It identifies the fields each service needs, including persistent data, ports, environment values, config files, networks, and runtime permissions.
 - Complete the missing Docker/K3s variants for all ten services. Replace the SonarQube placeholder with an actual SonarQube configuration.
 - Disconnect all twelve top-level submodules and nested submodules from this repository only after all their tracked file content is migrated. Preserve CI, docs, licenses, and helper files. Keep all upstream repositories.
@@ -63,10 +63,10 @@ The panel is an operator interface for the existing service installers. It does 
 
 This section supersedes earlier details that implied editing arbitrary service/backend fields or keeping duplicate common defaults in Compose and Helm.
 
-- The fixed common schema and validation live in panel code. Each service has one maintainer-owned `services/<service>/service-defaults.yml` file with `common` defaults and optional `docker` or `k3s` additions; the file provides values only and cannot add fields or change validation. Existing `services/<service>/config.yml` files remain Helm overrides where Jenkins already consumes them.
-- The same common defaults feed Docker and K3s. Native Compose and Helm assets remain deployment bases for complex or backend-specific settings, which are not edited in the panel in this first iteration.
+- The fixed common schema and validation live in panel code. Each service has one maintainer-owned `services/<service>/service-defaults.yml` containing common defaults only; it cannot add fields or change validation.
+- The same service values feed Docker and K3s. `templates/docker/` and `templates/k3s/helm/` are the only deployment templates, shared by all ten services. Backend-only behavior belongs in these shared templates and their backend mappings in panel code, not in per-service Compose/Helm trees.
 - The panel shows only applicable common fields for the selected service/backend. Application configuration file contents stay checked in; secrets stay external and are never returned to the browser or saved as values.
-- The panel stores operator overrides separately per service/backend/target under `.config/services/`. Render precedence is native backend base, shared service defaults, then the selected target override. This keeps backend-only settings native while making common values consistent; target overrides have highest priority and do not affect other targets.
+- The panel stores operator overrides separately per service/backend/target under `.config/services/`. Render precedence is shared backend template, service defaults, then the selected target override. Target overrides have highest priority and do not affect other targets.
 - Target override files use schema version 2. The first read of a legacy unversioned file writes a `.legacy` copy, atomically stores the versioned values, and verifies the saved copy can be read. The legacy copy is retained; repeating the read does not migrate or rewrite it again.
 - **Save** updates only target state. **Deploy** renders and validates the selected Compose or Helm result before creating a deployment job.
 - Existing saved target values are migrated automatically and idempotently. Original files remain available until successful reading of migrated state is confirmed.

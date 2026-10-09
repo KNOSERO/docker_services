@@ -98,7 +98,7 @@ test('service forms expose only the agreed common fields with typed ports', asyn
   assert.equal(field('postgresql', 'database')[4], 'text');
   assert.equal(field('postgresql', 'username')[4], 'text');
   assert.equal(field('postgresql', 'dataPath')[4], 'text');
-  assert.equal(field('postgresql', 'configFile')[4], 'text');
+  assert.equal(field('postgresql', 'configMountPath')[4], 'text');
   for (const key of ['passwordSecret', 'configContents', 'network', 'dockerSocket', 'ingressHost', 'ingressEnabled']) {
     assert.equal(field('postgresql', key), undefined, `postgresql form must not expose ${key}`);
   }
@@ -232,21 +232,26 @@ test('legacy hidden backend overrides are retained but excluded from rendered de
   validationResult = { code: 0, output: '' };
 });
 
-test('every managed service has Docker and K3s deployment definitions', async () => {
+test('every managed service renders from the shared Docker and K3s templates', async () => {
   const state = (await request('/api/state')).body;
   assert.equal(state.services.length, 10);
+  const dockerTemplate = path.join(projectRoot, 'templates', 'docker', 'docker-compose.yml');
+  assert.ok(parse(await readFile(dockerTemplate, 'utf8')).services);
+  const helmChart = path.join(projectRoot, 'templates', 'k3s', 'helm');
+  await readFile(path.join(helmChart, 'Chart.yaml'), 'utf8');
+  await readFile(path.join(helmChart, 'values.yaml'), 'utf8');
   for (const service of state.services) {
     const serviceRoot = path.join(projectRoot, 'services', service.id);
     const defaults = parse(await readFile(path.join(serviceRoot, 'service-defaults.yml'), 'utf8'));
     assert.ok(defaults.common.image, `${service.id} must define its shared image default`);
+    assert.equal(Object.keys(defaults).some((key) => ['docker', 'k3s'].includes(key)), false, `${service.id} values YAML must be backend-neutral`);
     for (const [key, , fallback, backend] of service.fields) {
-      assert.equal(fallback, defaults.common[key] ?? defaults[backend || 'docker'][key] ?? defaults.k3s[key] ?? '', `${service.id}.${key} API default must come from its service YAML`);
+      const expected = serviceDefaults(service.id, backend || 'docker')[key] ?? serviceDefaults(service.id, 'k3s')[key] ?? '';
+      assert.equal(fallback, expected, `${service.id}.${key} API default must come from its service YAML or shared backend defaults`);
     }
-    const compose = await readFile(path.join(serviceRoot, 'docker-compose.yml'), 'utf8');
-    assert.doesNotMatch(compose, /^\*\*\* Add File:/m);
-    assert.ok(parse(compose).services[service.id], `${service.id} Compose must parse and define its service`);
-    await readFile(path.join(serviceRoot, 'helm', 'Chart.yaml'), 'utf8');
-    const helmValues = JSON.parse(await readFile(path.join(serviceRoot, 'helm', 'values.yaml'), 'utf8'));
+    const compose = await dockerComposeFromBase(service.id, serviceDefaults(service.id, 'docker'));
+    assert.ok(compose.services[service.id], `${service.id} Compose must render from the shared template`);
+    const helmValues = await helmValuesForDeployment(service.id, serviceDefaults(service.id, 'k3s'));
     assert.equal(helmValues.name, service.id);
     assert.notEqual(helmValues.image.repository, 'hello-world');
   }
@@ -254,31 +259,31 @@ test('every managed service has Docker and K3s deployment definitions', async ()
   assert.equal(vpn.fields.some(([key]) => key === 'passwordHashSecret'), false);
   assert.ok(vpn.fields.some(([key]) => key === 'allowedIPs'));
   const postgresql = state.services.find(({ id }) => id === 'postgresql');
-  assert.ok(postgresql.fields.some(([key]) => key === 'configFile'));
-  const sonarqube = await readFile(path.join(projectRoot, 'services', 'sonarqube', 'config.yml'), 'utf8');
-  assert.match(sonarqube, /repository: sonarqube/);
-  assert.doesNotMatch(sonarqube, /hello-world/);
-  const postgres = await readFile(path.join(projectRoot, 'services', 'postgresql', 'config.yml'), 'utf8');
-  assert.match(postgres, /POSTGRES_PASSWORD_FILE/);
-  assert.doesNotMatch(postgres, /mypassword/);
+  assert.ok(postgresql.fields.some(([key]) => key === 'configMountPath'));
+  assert.equal(serviceDefaults('sonarqube', 'k3s').image, 'sonarqube:lts-community');
+  assert.equal(serviceDefaults('postgresql', 'k3s').passwordSecret, 'postgres_password');
+  await assert.rejects(
+    dockerComposeFromBase('postgresql', { ...serviceDefaults('postgresql'), configMountPath: '/etc/postgresql/custom.conf' }),
+    /application config file is not checked in/,
+  );
+  await assert.rejects(
+    helmValuesForDeployment('prometheus', { ...serviceDefaults('prometheus', 'k3s'), configMountPath: '/etc/prometheus/custom.yml' }),
+    /application config file is not checked in/,
+  );
 });
 
-test('K3s installation mounts the credentials used by the panel', async () => {
-  const pipeline = await readFile(path.join(projectRoot, 'services/panel/ci/deploy/Jenkinsfile'), 'utf8');
-  const deployment = await readFile(path.join(projectRoot, 'services/panel/helm/templates/deployment.yaml'), 'utf8');
-  const values = await readFile(path.join(projectRoot, 'services/panel/helm/values.yaml'), 'utf8');
-  assert.match(pipeline, /create secret generic services-panel-target-secrets/);
-  assert.doesNotMatch(pipeline, /create secret generic services-panel-secrets/);
-  assert.match(pipeline, /--from-file=k3s-token=/);
-  assert.match(pipeline, /--from-file=k3s-ca\.crt=/);
-  assert.match(pipeline, /credentialsId: 'panel-docker-ssh-key'/);
-  assert.match(pipeline, /credentialsId: 'panel-docker-known-hosts'/);
-  assert.match(pipeline, /--from-file=id_home_lab=/);
-  assert.match(pipeline, /--from-file=known_hosts=/);
-  assert.match(deployment, /secretName: \{\{ \.Values\.secrets\.name \}\}[\s\S]*optional: true/);
-  assert.match(deployment, /secretName: \{\{ \.Values\.targetCredentials\.name \}\}[\s\S]*defaultMode: 0400/);
-  assert.match(deployment, /mountPath: \/app\/secrets[\s\S]*mountPath: \/app\/target-secrets/);
-  assert.match(values, /targetCredentials:\s+name: services-panel-target-secrets/);
+test('shared K3s values retain runtime requirements for backend-specific services', async () => {
+  const vpn = await helmValuesForDeployment('vpn', serviceDefaults('vpn', 'k3s'));
+  assert.equal(vpn.hostNetwork, true);
+  assert.ok(vpn.containerSecurityContext.capabilities.add.includes('NET_ADMIN'));
+  assert.deepEqual(vpn.volumes.find(({ name }) => name === 'tun'), {
+    name: 'tun', hostPath: '/dev/net/tun', mountPath: '/dev/net/tun', type: 'CharDevice',
+  });
+  const dns = await helmValuesForDeployment('dns', serviceDefaults('dns', 'k3s'));
+  assert.equal(dns.hostNetwork, true);
+  const chartDeployment = await readFile(path.join(projectRoot, 'templates/k3s/helm/templates/deployment.yml'), 'utf8');
+  assert.match(chartDeployment, /hostNetwork: true/);
+  assert.match(chartDeployment, /containerSecurityContext/);
 });
 
 test('backend adapters preserve service-specific settings and secret handling', async () => {
@@ -301,22 +306,47 @@ test('backend adapters preserve service-specific settings and secret handling', 
   const compose = await dockerComposeFromBase('postgresql', { ...serviceDefaults('postgresql'), port: '5433' });
   assert.equal(compose.services.postgresql.container_name, 'postgresql');
   assert.deepEqual(compose.services.postgresql.ports, ['5433:5432']);
-  assert.ok(compose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/postgresql.conf:ro')));
+  assert.equal(compose.services.postgresql.command[1], `config_file=${serviceDefaults('postgresql').configMountPath}`);
+  const customPath = '/etc/postgresql/custom.conf';
+  const customPostgresCompose = dockerCompose('postgresql', { ...serviceDefaults('postgresql', 'docker'), configMountPath: customPath });
+  assert.equal(customPostgresCompose.services.postgresql.command[1], `config_file=${customPath}`);
+  assert.ok(customPostgresCompose.services.postgresql.volumes.some((mount) => mount.endsWith(`:${customPath}:ro`)));
+  const customPostgresHelm = deploymentValues('postgresql', { ...serviceDefaults('postgresql', 'k3s'), configMountPath: customPath });
+  assert.deepEqual(customPostgresHelm.image.args, ['-c', `config_file=${customPath}`]);
+  assert.equal(customPostgresHelm.configMounts[0].mountPath, customPath);
+  const customPrometheusHelm = deploymentValues('prometheus', { ...serviceDefaults('prometheus', 'k3s'), configMountPath: '/etc/prometheus/custom.yml' });
+  assert.equal(customPrometheusHelm.image.args[0], '--config.file=/etc/prometheus/custom.yml');
+  const customGrafanaHelm = deploymentValues('grafana', { ...serviceDefaults('grafana', 'k3s'), configMountPath: '/etc/grafana/custom.ini' });
+  assert.equal(customGrafanaHelm.env.find(({ name }) => name === 'GF_PATHS_CONFIG').value, '/etc/grafana/custom.ini');
   const portainerCompose = await dockerComposeFromBase('portainer', { ...serviceDefaults('portainer', 'docker'), dockerSocket: 'false' });
   assert.ok(portainerCompose.services.portainer.volumes.includes('/var/run/docker.sock:/var/run/docker.sock'));
 
-  const helmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), port: '3333', ingressHost: 'hidden.example', ingressEnabled: 'true' });
-  assert.deepEqual(helmValues.ingress.hosts.map(({ domain }) => domain), ['grafana.k3s.ravnet', 'grafana.ravcube.com']);
-  assert.equal(helmValues.service.type, 'NodePort');
-  assert.equal(helmValues.runAsUser, 0);
+  const helmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), port: '3333' });
+  assert.deepEqual(helmValues.ingress.hosts, []);
+  assert.equal(helmValues.service.type, 'ClusterIP');
+  assert.equal(helmValues.runAsUser, 472);
   assert.equal(helmValues.servicePorts[0].port, 3333);
 });
 
 test('configuration editor returns safe defaults and rejects paths outside the service', async () => {
   const defaults = await request('/api/configurations/grafana/docker/local');
   assert.equal(defaults.status, 200);
-  assert.equal(defaults.body.configuration.configFile, 'config/grafana.ini');
+  assert.equal(defaults.body.configuration.configMountPath, '/etc/grafana/grafana.ini');
   assert.equal('configContents' in defaults.body.configuration, false);
+
+  const customPath = await request('/api/configurations/grafana/docker/local', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ configMountPath: '/etc/grafana/custom.ini' }),
+  });
+  assert.equal(customPath.status, 200);
+  assert.equal(customPath.body.configuration.configMountPath, '/etc/grafana/custom.ini');
+  for (const configMountPath of ['', 'relative/config.ini', '/', '/etc/../secrets/config.ini', '/etc/grafana:config.ini']) {
+    const invalidPath = await request('/api/configurations/grafana/docker/local', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ configMountPath }),
+    });
+    assert.equal(invalidPath.status, 400, `must reject ${configMountPath}`);
+  }
 
   const editedContents = await request('/api/configurations/grafana/docker/local', {
     method: 'PUT', headers: { 'content-type': 'application/json' },

@@ -1,14 +1,4 @@
-{
-  "common": {
-    "image": "portainer/portainer-ce:latest",
-    "port": "9000",
-    "dataPath": "/mnt/core_data/portainer"
-  },
-  "docker": {
-    "dockerSocket": "true"
-  },
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
-  }
-}
+common:
+  image: portainer/portainer-ce:latest
+  port: "9000"
+  dataPath: /mnt/core_data/portainer

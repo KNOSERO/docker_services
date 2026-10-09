@@ -1,13 +1,5 @@
-{
-  "common": {
-    "image": "prom/prometheus:latest",
-    "port": "9090",
-    "configFile": "config/prometheus.yml",
-    "dataPath": "/mnt/core_data/prometheus"
-  },
-  "docker": {},
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
-  }
-}
+common:
+  image: prom/prometheus:latest
+  port: "9090"
+  dataPath: /mnt/core_data/prometheus
+  configMountPath: /etc/prometheus/prometheus.yml
