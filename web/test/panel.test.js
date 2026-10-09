@@ -340,6 +340,10 @@ test('backend adapters preserve service-specific settings and secret handling', 
   const customCompose = await dockerComposeFromBase('postgresql', { ...serviceDefaults('postgresql'), configMountPath: '/etc/postgresql/custom.conf' });
   assert.ok(customCompose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/custom.conf:ro')));
   assert.equal(customCompose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/postgresql.conf:ro')), false);
+  assert.deepEqual(customCompose.services.postgresql.command, ['-c', 'config_file=/etc/postgresql/custom.conf']);
+  const customPrometheusCompose = await dockerComposeFromBase('prometheus', { ...serviceDefaults('prometheus'), configMountPath: '/etc/prometheus/custom.yml' });
+  assert.ok(customPrometheusCompose.services.prometheus.volumes.some((mount) => mount.endsWith(':/etc/prometheus/custom.yml:ro')));
+  assert.ok(customPrometheusCompose.services.prometheus.command.includes('--config.file=/etc/prometheus/custom.yml'));
   const portainerCompose = await dockerComposeFromBase('portainer', { ...serviceDefaults('portainer', 'docker'), dockerSocket: 'false' });
   assert.ok(portainerCompose.services.portainer.volumes.includes('/var/run/docker.sock:/var/run/docker.sock'));
   assert.equal(serviceDefaults('portainer', 'docker').dockerSocket, undefined);
@@ -355,6 +359,8 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(customHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/custom.ini');
   const legacyHelmValues = await helmValuesForDeployment('grafana', { port: '3000' });
   assert.equal(legacyHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/grafana.ini');
+  const customPostgresqlHelmValues = await helmValuesForDeployment('postgresql', { ...serviceDefaults('postgresql', 'k3s'), configMountPath: '/etc/postgresql/custom.conf' });
+  assert.deepEqual(customPostgresqlHelmValues.image.args, ['-c', 'config_file=/etc/postgresql/custom.conf']);
   const basePortainerHelmValues = parse(await readFile(path.join(projectRoot, 'services', 'portainer', 'helm', 'values.yaml'), 'utf8'));
   const renderedPortainerHelmValues = await helmValuesForDeployment('portainer', serviceDefaults('portainer', 'k3s'));
   assert.deepEqual(renderedPortainerHelmValues.volumes.find(({ name }) => name === 'docker-socket'), basePortainerHelmValues.volumes.find(({ name }) => name === 'docker-socket'));

@@ -210,7 +210,7 @@ export function deploymentValues(service, configuration, backend = 'k3s') {
   const containerSecurityContext = service === 'vpn' ? { capabilities: { add: ['NET_ADMIN'] } } : undefined;
   return {
     name: service, namespace: service, replicas: 1, configMountPath: values.configMountPath,
-    image: { repository, tag, pullPolicy: 'IfNotPresent', ...(service === 'postgresql' ? { args: ['-c', 'config_file=/etc/postgresql/postgresql.conf'] } : {}) }, service: { type: 'ClusterIP' }, ports, servicePorts,
+    image: { repository, tag, pullPolicy: 'IfNotPresent', ...(service === 'postgresql' ? { args: ['-c', `config_file=${values.configMountPath}`] } : {}) }, service: { type: 'ClusterIP' }, ports, servicePorts,
     containerPorts: [...new Map(servicePorts.map((port) => [`${port.targetPort}/${port.protocol || 'TCP'}`, { containerPort: port.targetPort, protocol: port.protocol || 'TCP' }])).values()],
     env, runAsUser: service === 'grafana' ? 472 : service === 'sonarqube' ? 1000 : 0,
     volumes, containerSecurityContext,
@@ -249,7 +249,7 @@ export function dockerCompose(service, configuration) {
   }
   if (service === 'postgresql') {
     app.ports = [`${config.port}:5432`];
-    app.command = ['-c', 'config_file=/etc/postgresql/postgresql.conf'];
+    app.command = ['-c', `config_file=${config.configMountPath}`];
     app.volumes.push(`/opt/docker/${service}/${path.basename(config.configFile || 'postgresql.conf')}:${config.configMountPath}:ro`);
   }
   if (service === 'sonarqube') app.ports = [`${config.port}:9000`];
@@ -272,7 +272,7 @@ export function dockerCompose(service, configuration) {
   }
   if (service === 'prometheus') {
     const filename = path.basename(config.configFile || 'prometheus.yml');
-    app.command = ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.path=/prometheus'];
+    app.command = [`--config.file=${config.configMountPath}`, '--storage.tsdb.path=/prometheus'];
     app.volumes.push(`/opt/docker/${service}/${filename}:${config.configMountPath}:ro`);
   }
   if (service === 'grafana') app.volumes.push(`/opt/docker/${service}/${path.basename(config.configFile || 'grafana.ini')}:${config.configMountPath}:ro`);
@@ -303,6 +303,7 @@ export async function dockerComposeFromBase(service, configuration) {
   const settings = {
     ...baseSettings,
     image: generated.image,
+    ...(generated.command ? { command: generated.command } : {}),
     ports: generated.ports,
     environment: { ...(baseSettings.environment || {}), ...Object.fromEntries(Object.entries(generated.environment || {}).filter(([name]) => (commonEnvironmentNames[service] || []).includes(name))) },
     volumes: [...volumes.values()],
