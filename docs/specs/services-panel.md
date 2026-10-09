@@ -63,10 +63,10 @@ The panel is an operator interface for the existing service installers. It does 
 
 This section supersedes earlier details that implied editing arbitrary service/backend fields or keeping duplicate common defaults in Compose and Helm.
 
-- Each service has one maintainer-owned declaration of common defaults. Fixed common fields cover image/tag, port mappings, non-secret environment values, persistent data paths, and configuration mount paths. Service declarations provide values only; they cannot add fields or change validation.
+- The fixed common schema and validation live in panel code. Each service has one maintainer-owned YAML file for common defaults; it provides values only and cannot add fields or change validation. Existing `services/<service>/config.yml` files remain Helm overrides where Jenkins already consumes them.
 - The same common defaults feed Docker and K3s. Native Compose and Helm assets remain deployment bases for complex or backend-specific settings, which are not edited in the panel in this first iteration.
 - The panel shows only applicable common fields for the selected service/backend. Application configuration file contents stay checked in; secrets stay external and are never returned to the browser or saved as values.
-- The panel stores operator overrides separately per service/backend/target under `.config/services/`. The selected base and common service defaults are overlaid by saved target values, which have highest priority and do not affect other targets.
+- The panel stores operator overrides separately per service/backend/target under `.config/services/`. Render precedence is native backend base, shared service defaults, then the selected target override. This keeps backend-only settings native while making common values consistent; target overrides have highest priority and do not affect other targets.
 - **Save** updates only target state. **Deploy** renders and validates the selected Compose or Helm result before creating a deployment job.
 - Existing saved target values are migrated automatically and idempotently. Original files remain available until successful reading of migrated state is confirmed.
 

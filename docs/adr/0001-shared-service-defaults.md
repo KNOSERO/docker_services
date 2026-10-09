@@ -1,3 +1,3 @@
 # Shared service defaults with native backend bases
 
-Common editable deployment values are defined once per service and rendered into both Docker Compose and Helm. Each backend keeps its native assets for complex platform-specific settings, while operator overrides remain isolated per target; this avoids duplicated defaults without hiding Docker and Kubernetes differences behind an untyped manifest editor.
+The panel code owns the fixed common schema and validation. Each service keeps one tracked YAML file for common editable defaults; existing `config.yml` files stay as Helm overrides for Jenkins. Rendering layers the native Compose or Helm base first, shared service defaults second, and the selected target override last. This avoids duplicated defaults while keeping complex backend-specific settings native and operator changes isolated per target.
