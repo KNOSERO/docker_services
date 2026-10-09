@@ -8,12 +8,15 @@
       register: docker_network
       changed_when: false
       failed_when: false
-      when: network_name is defined
+      loop: "{{ network_names | default([]) }}"
+      loop_control:
+        loop_var: network_name
 
     - name: Create the external Docker network when missing
       ansible.builtin.command:
-        argv: [docker, network, create, --driver, bridge, "{{ network_name }}"]
-      when: network_name is defined and docker_network.rc != 0
+        argv: [docker, network, create, --driver, bridge, "{{ item.network_name }}"]
+      loop: "{{ docker_network.results | default([]) }}"
+      when: item.rc != 0
 
     - name: Create deployment directory
       ansible.builtin.file:

@@ -4,19 +4,28 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, serviceDefaults } from '../api.js';
+import { parse } from 'yaml';
+import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, helmValuesForDeployment, serviceDefaults } from '../api.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let root;
 let server;
 let baseUrl;
 let deployed;
+let validations;
+let validationResult;
 
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'services-panel-'));
   deployed = [];
+  validations = [];
+  validationResult = { code: 0, output: '' };
   server = createPanel({
     dataDir: root,
+    validator: async (job) => {
+      validations.push(job);
+      return typeof validationResult === 'function' ? validationResult(job) : validationResult;
+    },
     adapter: async (job) => {
       deployed.push(job);
       return { code: job.service === 'grafana' ? 1 : 0, output: job.service === 'grafana' ? 'deployment failed' : 'deployment complete' };
@@ -175,19 +184,67 @@ test('invalid or cross-backend configurations are rejected before a job is creat
   assert.equal((await request('/api/jobs')).body.length, 0);
 });
 
+test('render validation failure returns a useful error and creates no job', async () => {
+  await saveTarget({ id: 'preflight-host', name: 'Preflight host', backend: 'docker', host: '192.0.2.12', user: 'deploy', keySecret: 'id_home_lab' });
+  await request('/api/configurations/sonarqube/docker/preflight-host', {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port: '9000' }),
+  });
+  const jobsBefore = (await request('/api/jobs')).body.length;
+  const deploysBefore = deployed.length;
+  validationResult = { code: 1, output: 'services.sonarqube.ports must be a list' };
+
+  const response = await request('/api/deployments', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ service: 'sonarqube', backend: 'docker', targetId: 'preflight-host' }),
+  });
+
+  assert.equal(response.status, 422);
+  assert.match(response.body.error, /Compose validation failed/);
+  assert.match(response.body.error, /ports must be a list/);
+  assert.deepEqual(
+    { service: validations.at(-1).service, backend: validations.at(-1).backend, targetId: validations.at(-1).targetId, port: validations.at(-1).configuration.port },
+    { service: 'sonarqube', backend: 'docker', targetId: 'preflight-host', port: '9000' },
+  );
+  assert.equal((await request('/api/jobs')).body.length, jobsBefore);
+  assert.equal(deployed.length, deploysBefore);
+  validationResult = { code: 0, output: '' };
+});
+
+test('legacy hidden backend overrides are retained but excluded from rendered deployment input', async () => {
+  await saveTarget({ id: 'legacy-docker', name: 'Legacy Docker', backend: 'docker', host: '192.0.2.13', user: 'deploy', keySecret: 'id_home_lab' });
+  const legacyPath = path.join(root, 'services', 'proxy', 'docker', 'legacy-docker.yml');
+  const legacy = { schemaVersion: 2, overrides: { httpPort: '8080', network: 'untrusted-network' } };
+  await mkdir(path.dirname(legacyPath), { recursive: true });
+  await writeFile(legacyPath, JSON.stringify(legacy));
+  validationResult = async (job) => ({ compose: await dockerComposeFromBase(job.service, job.configuration) });
+
+  const response = await request('/api/deployments', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ service: 'proxy', backend: 'docker', targetId: 'legacy-docker' }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(response.status, 202);
+  assert.equal('network' in validations.at(-1).configuration, false);
+  assert.deepEqual(deployed.at(-1).rendered.compose.services.proxy.networks, ['proxy']);
+  assert.deepEqual(deployed.at(-1).rendered.compose.networks.proxy, { external: true });
+  assert.deepEqual(JSON.parse(await readFile(legacyPath, 'utf8')), legacy);
+  validationResult = { code: 0, output: '' };
+});
+
 test('every managed service has Docker and K3s deployment definitions', async () => {
   const state = (await request('/api/state')).body;
   assert.equal(state.services.length, 10);
   for (const service of state.services) {
     const serviceRoot = path.join(projectRoot, 'services', service.id);
-    const defaults = JSON.parse(await readFile(path.join(serviceRoot, 'service-defaults.yml'), 'utf8'));
+    const defaults = parse(await readFile(path.join(serviceRoot, 'service-defaults.yml'), 'utf8'));
     assert.ok(defaults.common.image, `${service.id} must define its shared image default`);
     for (const [key, , fallback, backend] of service.fields) {
       assert.equal(fallback, defaults.common[key] ?? defaults[backend || 'docker'][key] ?? defaults.k3s[key] ?? '', `${service.id}.${key} API default must come from its service YAML`);
     }
     const compose = await readFile(path.join(serviceRoot, 'docker-compose.yml'), 'utf8');
     assert.doesNotMatch(compose, /^\*\*\* Add File:/m);
-    assert.ok(JSON.parse(compose).services[service.id], `${service.id} Compose must parse and define its service`);
+    assert.ok(parse(compose).services[service.id], `${service.id} Compose must parse and define its service`);
     await readFile(path.join(serviceRoot, 'helm', 'Chart.yaml'), 'utf8');
     const helmValues = JSON.parse(await readFile(path.join(serviceRoot, 'helm', 'values.yaml'), 'utf8'));
     assert.equal(helmValues.name, service.id);
@@ -245,6 +302,14 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(compose.services.postgresql.container_name, 'postgresql');
   assert.deepEqual(compose.services.postgresql.ports, ['5433:5432']);
   assert.ok(compose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/postgresql.conf:ro')));
+  const portainerCompose = await dockerComposeFromBase('portainer', { ...serviceDefaults('portainer', 'docker'), dockerSocket: 'false' });
+  assert.ok(portainerCompose.services.portainer.volumes.includes('/var/run/docker.sock:/var/run/docker.sock'));
+
+  const helmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), port: '3333', ingressHost: 'hidden.example', ingressEnabled: 'true' });
+  assert.deepEqual(helmValues.ingress.hosts.map(({ domain }) => domain), ['grafana.k3s.ravnet', 'grafana.ravcube.com']);
+  assert.equal(helmValues.service.type, 'NodePort');
+  assert.equal(helmValues.runAsUser, 0);
+  assert.equal(helmValues.servicePorts[0].port, 3333);
 });
 
 test('configuration editor returns safe defaults and rejects paths outside the service', async () => {
@@ -273,6 +338,7 @@ test('deploy uses the saved service/backend/target configuration and records suc
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ port: '5434' }),
   });
+  validationResult = async (job) => ({ compose: await dockerComposeFromBase(job.service, job.configuration) });
 
   const started = await request('/api/deployments', {
     method: 'POST',
@@ -283,13 +349,14 @@ test('deploy uses the saved service/backend/target configuration and records suc
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const jobs = (await request('/api/jobs')).body;
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0].status, 'succeeded');
-  assert.equal(deployed[0].service, 'postgresql');
-  assert.equal(deployed[0].backend, 'docker');
-  assert.equal(deployed[0].targetId, 'local');
-  assert.equal(deployed[0].configuration.port, '5434');
+  assert.equal(jobs.find(({ id }) => id === started.body.id).status, 'succeeded');
+  assert.equal(deployed.at(-1).service, 'postgresql');
+  assert.equal(deployed.at(-1).backend, 'docker');
+  assert.equal(deployed.at(-1).targetId, 'local');
+  assert.equal(deployed.at(-1).configuration.port, '5434');
+  assert.deepEqual(deployed.at(-1).rendered.compose.services.postgresql.ports, ['5434:5432']);
   assert.equal((await request(`/api/jobs/${started.body.id}`)).body.logs, 'deployment complete');
+  validationResult = { code: 0, output: '' };
 });
 
 test('failed deployments are visible in job status, history, and logs', async () => {

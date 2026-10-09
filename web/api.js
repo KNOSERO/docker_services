@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { parse } from 'yaml';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const services = [
@@ -27,6 +28,21 @@ const editableFields = new Set(['image', 'port', 'httpPort', 'httpsPort', 'admin
 const portFields = new Set(['port', 'httpPort', 'httpsPort', 'adminPort', 'webPort', 'dnsPort', 'registryPort', 'agentPort', 'vpnPort']);
 const configPath = (dataDir, service, backend, targetId) => path.join(dataDir, 'services', service, backend, `${targetId}.yml`);
 const yaml = (value) => `${JSON.stringify(value, null, 2)}\n`;
+const mergeValues = (base, overlay) => Object.fromEntries([...new Set([...Object.keys(base || {}), ...Object.keys(overlay || {})])].map((key) => {
+  const left = base?.[key];
+  const right = overlay?.[key];
+  return [key, left && right && !Array.isArray(left) && !Array.isArray(right) && typeof left === 'object' && typeof right === 'object' ? mergeValues(left, right) : right === undefined ? left : right];
+}));
+const mergeNamedValues = (base = [], overlay = [], keyOf = ({ name }) => name) => {
+  const values = new Map((base || []).map((item) => [keyOf(item), item]));
+  for (const item of overlay || []) values.set(keyOf(item), { ...(values.get(keyOf(item)) || {}), ...item });
+  return [...values.values()];
+};
+const commonEnvironmentNames = {
+  postgresql: ['POSTGRES_DB', 'POSTGRES_USER'], jenkins: ['TZ'], dns: ['TZ'],
+  vpn: ['WG_HOST', 'WG_PORT', 'WG_DEFAULT_DNS', 'WG_ALLOWED_IPS'],
+};
+const commonEnvironment = (service, generated) => generated.filter(({ name }) => (commonEnvironmentNames[service] || []).includes(name));
 let jobsWrite = Promise.resolve();
 
 async function readDocument(file, fallback) {
@@ -116,7 +132,9 @@ async function command(program, args, options = {}) {
 export function serviceDefaults(service, backend) {
   const definition = services.find((item) => item.id === service);
   if (!definition) throw new Error(`Unknown service: ${service}`);
-  const defaults = JSON.parse(readFileSync(path.join(root, '..', 'services', service, 'service-defaults.yml'), 'utf8'));
+  let defaults;
+  try { defaults = parse(readFileSync(path.join(root, '..', 'services', service, 'service-defaults.yml'), 'utf8')); }
+  catch (error) { throw new Error(`Invalid service defaults for ${service}: ${error.message}`); }
   return { ...defaults.common, ...(backend ? defaults[backend] : defaults.docker), ...(!backend ? defaults.k3s : {}) };
 }
 
@@ -266,29 +284,30 @@ export function dockerCompose(service, configuration) {
 
 export async function dockerComposeFromBase(service, configuration) {
   const baseFile = path.join(root, '..', 'services', service, 'docker-compose.yml');
-  const base = JSON.parse(await readFile(baseFile, 'utf8'));
+  let base;
+  try { base = parse(await readFile(baseFile, 'utf8')); }
+  catch (error) { throw new Error(`Invalid Compose base for ${service}: ${error.message}`); }
   const rendered = dockerCompose(service, configuration);
   const original = base.services?.[service] || {};
   const generated = rendered.services[service];
   const volumeTarget = (mount) => mount.split(':')[1];
   const volumes = new Map((original.volumes || []).map((mount) => [volumeTarget(mount), mount]));
-  for (const mount of generated.volumes || []) volumes.set(volumeTarget(mount), mount);
-  if (service === 'portainer' && configuration.dockerSocket === 'false') volumes.delete('/var/run/docker.sock');
+  for (const mount of generated.volumes || []) {
+    if (/\/(run\/secrets|var\/run\/docker\.sock|dev\/net\/tun)(:|$)/.test(volumeTarget(mount))) continue;
+    volumes.set(volumeTarget(mount), mount);
+  }
   const { networks: baseNetworks, ...baseSettings } = original;
-  const { networks: generatedNetworks, ...generatedSettings } = generated;
   const settings = {
     ...baseSettings,
-    ...generatedSettings,
-    environment: { ...(baseSettings.environment || {}), ...(generatedSettings.environment || {}) },
+    image: generated.image,
+    ports: generated.ports,
+    environment: { ...(baseSettings.environment || {}), ...Object.fromEntries(Object.entries(generated.environment || {}).filter(([name]) => (commonEnvironmentNames[service] || []).includes(name))) },
     volumes: [...volumes.values()],
   };
-  if (generatedNetworks) settings.networks = generatedNetworks;
-  else if (baseNetworks && !['proxy', 'dns'].includes(service)) settings.networks = baseNetworks;
+  if (generated.dns) settings.dns = generated.dns;
   return {
     ...base,
-    ...rendered,
-    networks: { ...(base.networks || {}), ...(rendered.networks || {}) },
-    services: { ...base.services, [service]: settings },
+    services: { ...base.services, [service]: { ...settings, ...(baseNetworks ? { networks: baseNetworks } : {}) } },
   };
 }
 
@@ -320,6 +339,66 @@ async function stageConfigFile(service, configuration, temporary) {
   return { source: staged, name: path.basename(source), contents };
 }
 
+export async function helmValuesForDeployment(service, configuration) {
+  const chart = path.join(root, '..', 'services', service, 'helm');
+  let nativeValues;
+  try { nativeValues = parse(await readFile(path.join(chart, 'values.yaml'), 'utf8')); }
+  catch (error) { throw new Error(`Invalid Helm base values for ${service}: ${error.message}`); }
+  try { nativeValues = mergeValues(nativeValues, parse(await readFile(path.join(root, '..', 'services', service, 'config.yml'), 'utf8'))); }
+  catch (error) { if (error.code !== 'ENOENT') throw new Error(`Invalid Helm service override for ${service}: ${error.message}`); }
+  const generated = deploymentValues(service, configuration, 'k3s');
+  const values = { ...nativeValues };
+  values.image = mergeValues(nativeValues.image, generated.image);
+  values.ports = generated.ports;
+  values.servicePorts = mergeNamedValues(nativeValues.servicePorts, generated.servicePorts);
+  values.containerPorts = mergeNamedValues(nativeValues.containerPorts, generated.containerPorts, ({ containerPort, protocol }) => `${containerPort}/${protocol}`);
+  values.env = mergeNamedValues(nativeValues.env, commonEnvironment(service, generated.env));
+  values.volumes = mergeNamedValues(nativeValues.volumes, generated.volumes);
+  if (generated.podDnsConfig) values.podDnsConfig = mergeValues(nativeValues.podDnsConfig, generated.podDnsConfig);
+  const source = await serviceConfigSource(service, configuration);
+  if (source) {
+    const filename = path.basename(source);
+    values.configFiles = { [filename]: configuration.configContents ?? await readFile(source, 'utf8') };
+    const pathInContainer = { postgresql: '/etc/postgresql/postgresql.conf', prometheus: '/etc/prometheus/prometheus.yml', grafana: '/etc/grafana/grafana.ini' }[service];
+    values.configMounts = mergeNamedValues(nativeValues.configMounts, [{ name: `${service}-config`, configMap: `${service}-config`, mountPath: pathInContainer, subPath: filename, readOnly: true }]);
+    values.configMaps = [];
+  }
+  return values;
+}
+
+async function validateRenderedDeployment(job) {
+  const temporary = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'panel-validation-')));
+  try {
+    if (job.backend === 'docker') {
+      const composeFile = path.join(temporary, 'docker-compose.yml');
+      const compose = await dockerComposeFromBase(job.service, job.configuration);
+      await writeFile(composeFile, yaml(compose), { mode: 0o600 });
+      const result = await command('docker', ['compose', '-f', composeFile, 'config', '-q']);
+      if (result.code !== 0) throw Object.assign(new Error(`Compose validation failed: ${result.output.trim() || 'Docker Compose could not validate the rendered configuration'}`), { status: 422 });
+      return { compose };
+    }
+
+    const chart = path.join(root, '..', 'services', job.service, 'helm');
+    const valuesFile = path.join(temporary, 'values.yml');
+    const helmValues = await helmValuesForDeployment(job.service, job.configuration);
+    await writeFile(valuesFile, yaml(helmValues), { mode: 0o600 });
+    const valuesArgs = ['--values', valuesFile];
+    for (const [label, args] of [
+      ['lint', ['lint', chart, ...valuesArgs]],
+      ['render', ['template', job.service, chart, '--namespace', job.service, ...valuesArgs]],
+    ]) {
+      const result = await command('helm', args);
+      if (result.code !== 0) throw Object.assign(new Error(`Helm ${label} validation failed: ${result.output.trim() || 'Helm could not validate the rendered configuration'}`), { status: 422 });
+    }
+    return { helmValues };
+  } catch (error) {
+    if (!error.status) error.status = 422;
+    throw error;
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 async function deployJob(job, dataDir, setStage) {
   if (job.backend === 'docker') {
     const target = job.target;
@@ -327,10 +406,13 @@ async function deployJob(job, dataDir, setStage) {
     const temporary = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'panel-compose-')));
     try {
       await setStage('Preparing Docker Compose configuration');
-      await writeFile(path.join(temporary, 'docker-compose.yml'), yaml(await dockerComposeFromBase(job.service, job.configuration)), { mode: 0o600 });
+      await writeFile(path.join(temporary, 'docker-compose.yml'), yaml(job.rendered.compose), { mode: 0o600 });
       const secret = await stageServiceSecret(job.service, job.configuration, temporary, process.env.PANEL_SECRETS_DIR || path.join(root, '..', 'secrets'));
       const configFile = await stageConfigFile(job.service, job.configuration, temporary);
       const template = path.join(root, '..', 'templates', 'docker');
+      const networkNames = Object.entries(job.rendered.compose.networks || {})
+        .filter(([, network]) => network.external)
+        .map(([name, network]) => network.name || network.external.name || name);
       await setStage('Deploying Docker Compose to the selected host');
       return await command('ansible-playbook', [
         path.join(template, 'deploy.yml'), '-i', `${target.host},`, '-u', target.user,
@@ -339,7 +421,7 @@ async function deployJob(job, dataDir, setStage) {
         '-e', `service=${job.service}`, '-e', `compose_source=${path.join(temporary, 'docker-compose.yml')}`,
         ...(secret ? ['-e', `secret_source=${secret.dockerSource || secret.source}`, '-e', `secret_name=${secret.dockerName || secret.name}`] : []),
         ...(configFile ? ['-e', `config_source=${configFile.source}`, '-e', `config_name=${configFile.name}`] : []),
-        ...(job.configuration.network && ['proxy', 'dns'].includes(job.service) ? ['-e', `network_name=${job.configuration.network}`] : []),
+        ...(networkNames.length ? ['-e', JSON.stringify({ network_names: networkNames })] : []),
       ], { cwd: template });
     } finally { await rm(temporary, { recursive: true, force: true }); }
   }
@@ -357,14 +439,7 @@ async function deployJob(job, dataDir, setStage) {
     await writeFile(kubeconfig, credentials, { mode: 0o600 });
     const chart = path.join(root, '..', 'services', job.service, 'helm');
     const valuesFile = path.join(temporary, 'values.yml');
-    const values = deploymentValues(job.service, job.configuration, job.backend);
-    const configFile = await stageConfigFile(job.service, job.configuration, temporary);
-    if (configFile) {
-      values.configFiles = { [configFile.name]: configFile.contents };
-      const pathInContainer = { postgresql: '/etc/postgresql/postgresql.conf', prometheus: '/etc/prometheus/prometheus.yml', grafana: '/etc/grafana/grafana.ini' }[job.service];
-      values.configMounts = [{ name: `${job.service}-config`, configMap: `${job.service}-config`, mountPath: pathInContainer, subPath: configFile.name, readOnly: true }];
-      values.configMaps = [];
-    }
+    const values = job.rendered.helmValues;
     await writeFile(valuesFile, yaml(values), { mode: 0o600 });
     const secret = await stageServiceSecret(job.service, job.configuration, temporary, secretRoot);
     if (secret) {
@@ -380,13 +455,13 @@ async function deployJob(job, dataDir, setStage) {
       if (applied.code !== 0) return applied;
     }
     await setStage('Installing service with Helm');
-    return await command('helm', ['upgrade', '--install', job.service, chart, '--namespace', job.service, '--create-namespace', '--kubeconfig', kubeconfig, '-f', valuesFile]);
+    return await command('helm', ['upgrade', '--install', job.service, chart, '--namespace', job.service, '--create-namespace', '--kubeconfig', kubeconfig, '--values', valuesFile]);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
 }
 
-export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.resolve(root, '..', '.config'), adapter = deployJob } = {}) {
+export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.resolve(root, '..', '.config'), adapter = deployJob, validator = validateRenderedDeployment } = {}) {
   const server = httpServer(async (request, response) => {
     try {
       const allowedHosts = new Set((process.env.PANEL_ALLOWED_HOSTS || '').split(',').map((host) => host.trim()).filter(Boolean));
@@ -474,19 +549,23 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         const input = await body(request);
         const definition = services.find((item) => item.id === input.service);
         if (!definition || !backends.includes(input.backend) || !slug(input.targetId)) throw Object.assign(new Error('Select a valid service, backend, and target'), { status: 400 });
-        const configuration = await readTargetOverrides(dataDir, input.service, input.backend, input.targetId);
-        if (!configuration) throw Object.assign(new Error('Save the deployment configuration before deploying'), { status: 409 });
+        const savedConfiguration = await readTargetOverrides(dataDir, input.service, input.backend, input.targetId);
+        if (!savedConfiguration) throw Object.assign(new Error('Save the deployment configuration before deploying'), { status: 409 });
+        const configuration = visibleConfiguration(definition, input.backend, savedConfiguration);
         const targets = await readDocument(path.join(dataDir, 'targets.yml'), []);
         const target = targets.find((item) => item.id === input.targetId);
         if (!target) throw Object.assign(new Error('Target profile not found'), { status: 404 });
         if (target.backend !== input.backend) throw Object.assign(new Error('Target profile backend does not match the deployment'), { status: 400 });
+        const validation = await validator({ service: input.service, backend: input.backend, targetId: input.targetId, configuration, target });
+        if (validation?.code !== undefined && validation.code !== 0) throw Object.assign(new Error(`${input.backend === 'docker' ? 'Compose' : 'Deployment'} validation failed: ${validation.output || 'invalid configuration'}`), { status: 422 });
+        const rendered = validation?.compose || validation?.helmValues ? validation : undefined;
         const job = { id: randomUUID(), service: input.service, serviceName: definition.name, backend: input.backend, targetId: input.targetId, status: 'running', stage: 'Starting deployment', createdAt: new Date().toISOString(), logs: '' };
         await updateJobs(dataDir, (jobs) => jobs.unshift(job));
         json(response, 202, { id: job.id, status: job.status });
         const setStage = async (stage) => {
           await updateJobs(dataDir, (jobs) => { const current = jobs.find((item) => item.id === job.id); if (current) current.stage = stage; });
         };
-        Promise.resolve(adapter({ ...job, configuration, target }, dataDir, setStage)).then(async (result) => {
+        Promise.resolve(adapter({ ...job, configuration, target, rendered }, dataDir, setStage)).then(async (result) => {
           await updateJobs(dataDir, (jobs) => {
             const current = jobs.find((item) => item.id === job.id);
             if (!current) return;
