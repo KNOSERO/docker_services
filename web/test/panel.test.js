@@ -344,6 +344,9 @@ test('backend adapters preserve service-specific settings and secret handling', 
   const customPrometheusCompose = await dockerComposeFromBase('prometheus', { ...serviceDefaults('prometheus'), configMountPath: '/etc/prometheus/custom.yml' });
   assert.ok(customPrometheusCompose.services.prometheus.volumes.some((mount) => mount.endsWith(':/etc/prometheus/custom.yml:ro')));
   assert.ok(customPrometheusCompose.services.prometheus.command.includes('--config.file=/etc/prometheus/custom.yml'));
+  const customGrafanaCompose = await dockerComposeFromBase('grafana', { ...serviceDefaults('grafana'), configMountPath: '/etc/grafana/custom.ini' });
+  assert.ok(customGrafanaCompose.services.grafana.volumes.some((mount) => mount.endsWith(':/etc/grafana/custom.ini:ro')));
+  assert.equal(customGrafanaCompose.services.grafana.environment.GF_PATHS_CONFIG, '/etc/grafana/custom.ini');
   const portainerCompose = await dockerComposeFromBase('portainer', { ...serviceDefaults('portainer', 'docker'), dockerSocket: 'false' });
   assert.ok(portainerCompose.services.portainer.volumes.includes('/var/run/docker.sock:/var/run/docker.sock'));
   assert.equal(serviceDefaults('portainer', 'docker').dockerSocket, undefined);
@@ -357,6 +360,7 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(helmValues.servicePorts[0].port, 3333);
   const customHelmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), configMountPath: '/etc/grafana/custom.ini' });
   assert.equal(customHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/custom.ini');
+  assert.equal(customHelmValues.env.find(({ name }) => name === 'GF_PATHS_CONFIG')?.value, '/etc/grafana/custom.ini');
   const legacyHelmValues = await helmValuesForDeployment('grafana', { port: '3000' });
   assert.equal(legacyHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/grafana.ini');
   const customPostgresqlHelmValues = await helmValuesForDeployment('postgresql', { ...serviceDefaults('postgresql', 'k3s'), configMountPath: '/etc/postgresql/custom.conf' });

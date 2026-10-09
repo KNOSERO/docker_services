@@ -39,7 +39,7 @@ const mergeNamedValues = (base = [], overlay = [], keyOf = ({ name }) => name) =
   return [...values.values()];
 };
 const commonEnvironmentNames = {
-  postgresql: ['POSTGRES_DB', 'POSTGRES_USER'], jenkins: ['TZ'], dns: ['TZ'],
+  postgresql: ['POSTGRES_DB', 'POSTGRES_USER'], grafana: ['GF_PATHS_CONFIG'], jenkins: ['TZ'], dns: ['TZ'],
   vpn: ['WG_HOST', 'WG_PORT', 'WG_DEFAULT_DNS', 'WG_ALLOWED_IPS'],
 };
 const commonEnvironment = (service, generated) => generated.filter(({ name }) => (commonEnvironmentNames[service] || []).includes(name));
@@ -190,7 +190,10 @@ export function deploymentValues(service, configuration, backend = 'k3s') {
   }[service];
   const env = {
     postgresql: [{ name: 'POSTGRES_DB', value: values.database }, { name: 'POSTGRES_USER', value: values.username }, { name: 'POSTGRES_PASSWORD_FILE', value: `/run/secrets/${path.basename(values.passwordSecret || 'postgres_password')}` }],
-    grafana: [{ name: 'GF_SECURITY_ADMIN_PASSWORD__FILE', value: `/run/secrets/${path.basename(values.passwordSecret || 'grafana_password')}` }],
+    grafana: [
+      { name: 'GF_SECURITY_ADMIN_PASSWORD__FILE', value: `/run/secrets/${path.basename(values.passwordSecret || 'grafana_password')}` },
+      { name: 'GF_PATHS_CONFIG', value: values.configMountPath },
+    ],
     proxy: [{ name: 'DB_SQLITE_FILE', value: '/data/database.sqlite' }],
     jenkins: [{ name: 'TZ', value: values.timezone }], dns: [{ name: 'TZ', value: values.timezone }],
   }[service] || [];
