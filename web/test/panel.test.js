@@ -57,7 +57,7 @@ test('saving a deployment configuration persists it without creating a job', asy
   const saved = await request('/api/configurations/postgresql/docker/local', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ port: '5433', passwordSecret: 'postgres_password' }),
+    body: JSON.stringify({ port: '5433' }),
   });
 
   assert.equal(saved.status, 200);
@@ -77,12 +77,56 @@ test('panel configuration defaults come from the tracked service catalog', async
   assert.equal(response.body.configuration.dataPath, '/mnt/core_data/postgresql');
   const state = (await request('/api/state')).body;
   const proxy = state.services.find(({ id }) => id === 'proxy');
-  assert.deepEqual(proxy.fields.find(([key]) => key === 'network'), ['network', 'Docker network', 'proxy', 'docker']);
+  assert.equal(proxy.fields.find(([key]) => key === 'network'), undefined);
+});
+
+test('service forms expose only the agreed common fields with typed ports', async () => {
+  const state = (await request('/api/state')).body;
+  const field = (serviceId, key) => state.services.find(({ id }) => id === serviceId).fields.find(([name]) => name === key);
+
+  assert.equal(field('postgresql', 'image')[4], 'text');
+  assert.equal(field('postgresql', 'port')[4], 'number');
+  assert.equal(field('postgresql', 'database')[4], 'text');
+  assert.equal(field('postgresql', 'username')[4], 'text');
+  assert.equal(field('postgresql', 'dataPath')[4], 'text');
+  assert.equal(field('postgresql', 'configFile')[4], 'text');
+  for (const key of ['passwordSecret', 'configContents', 'network', 'dockerSocket', 'ingressHost', 'ingressEnabled']) {
+    assert.equal(field('postgresql', key), undefined, `postgresql form must not expose ${key}`);
+  }
+  assert.equal(field('proxy', 'network'), undefined);
+  assert.equal(field('portainer', 'dockerSocket'), undefined);
+  assert.equal(field('vpn', 'passwordHashSecret'), undefined);
+  assert.equal(field('dns', 'webPort')[4], 'number');
+});
+
+test('saving visible fields preserves hidden legacy target overrides', async () => {
+  const configFile = path.join(root, 'services', 'proxy', 'docker', 'hidden-state.yml');
+  await mkdir(path.dirname(configFile), { recursive: true });
+  await writeFile(configFile, JSON.stringify({ schemaVersion: 2, overrides: { httpPort: '80', network: 'legacy-network' } }));
+
+  const hiddenInput = await request('/api/configurations/proxy/docker/hidden-state', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'replacement-network' }),
+  });
+  assert.equal(hiddenInput.status, 400);
+
+  const saved = await request('/api/configurations/proxy/docker/hidden-state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ image: 'jc21/nginx-proxy-manager:latest', httpPort: '8080', httpsPort: '8443', adminPort: '8181', dataPath: '/srv/proxy', dnsServers: '192.168.0.2' }),
+  });
+
+  assert.equal(saved.status, 200);
+  assert.equal('network' in saved.body.configuration, false);
+  assert.deepEqual(JSON.parse(await readFile(configFile, 'utf8')).overrides, {
+    httpPort: '8080', network: 'legacy-network',
+    image: 'jc21/nginx-proxy-manager:latest', httpsPort: '8443', adminPort: '8181', dataPath: '/srv/proxy', dnsServers: '192.168.0.2',
+  });
 });
 
 test('legacy target configuration migrates once and remains recoverable', async () => {
   const legacyPath = path.join(root, 'services', 'postgresql', 'docker', 'legacy-target.yml');
-  const legacy = '{"port":"5544","username":"legacy-user","configContents":"legacy app config"}\n';
+  const legacy = '{"port":"5544","username":"legacy-user","passwordSecret":"legacy-password-file","configContents":"legacy app config"}\n';
   await mkdir(path.dirname(legacyPath), { recursive: true });
   await writeFile(legacyPath, legacy);
 
@@ -91,9 +135,10 @@ test('legacy target configuration migrates once and remains recoverable', async 
   assert.equal(migrated.body.configuration.image, 'postgres:16');
   assert.equal(migrated.body.configuration.port, '5544');
   assert.equal('configContents' in migrated.body.configuration, false);
+  assert.equal('passwordSecret' in migrated.body.configuration, false);
   assert.deepEqual(JSON.parse(await readFile(legacyPath, 'utf8')), {
     schemaVersion: 2,
-    overrides: { port: '5544', username: 'legacy-user' },
+    overrides: { port: '5544', username: 'legacy-user', passwordSecret: 'legacy-password-file' },
   });
   assert.equal(await readFile(`${legacyPath}.legacy`, 'utf8'), legacy);
 
@@ -149,7 +194,7 @@ test('every managed service has Docker and K3s deployment definitions', async ()
     assert.notEqual(helmValues.image.repository, 'hello-world');
   }
   const vpn = state.services.find(({ id }) => id === 'vpn');
-  assert.ok(vpn.fields.some(([key]) => key === 'passwordHashSecret'));
+  assert.equal(vpn.fields.some(([key]) => key === 'passwordHashSecret'), false);
   assert.ok(vpn.fields.some(([key]) => key === 'allowedIPs'));
   const postgresql = state.services.find(({ id }) => id === 'postgresql');
   assert.ok(postgresql.fields.some(([key]) => key === 'configFile'));

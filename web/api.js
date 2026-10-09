@@ -23,6 +23,8 @@ const services = [
 for (const definition of services) definition.fields.push(['ingressHost', 'Ingress hostname', 'k3s'], ['ingressEnabled', 'Enable ingress (true/false)', 'k3s']);
 
 const backends = ['docker', 'k3s'];
+const editableFields = new Set(['image', 'port', 'httpPort', 'httpsPort', 'adminPort', 'webPort', 'dnsPort', 'registryPort', 'agentPort', 'vpnPort', 'database', 'username', 'timezone', 'host', 'dnsServers', 'allowedIPs', 'dataPath', 'configFile']);
+const portFields = new Set(['port', 'httpPort', 'httpsPort', 'adminPort', 'webPort', 'dnsPort', 'registryPort', 'agentPort', 'vpnPort']);
 const configPath = (dataDir, service, backend, targetId) => path.join(dataDir, 'services', service, backend, `${targetId}.yml`);
 const yaml = (value) => `${JSON.stringify(value, null, 2)}\n`;
 let jobsWrite = Promise.resolve();
@@ -120,11 +122,16 @@ export function serviceDefaults(service, backend) {
 
 function serviceFormFields(definition) {
   const defaults = serviceDefaults(definition.id);
-  return definition.fields.map(([key, label, backend]) => [key, label, defaults[key] ?? '', ...(backend ? [backend] : [])]);
+  return definition.fields.filter(([key]) => editableFields.has(key)).map(([key, label, backend]) => [key, label, defaults[key] ?? '', backend || '', portFields.has(key) ? 'number' : 'text']);
 }
 
 function fieldsForBackend(definition, backend) {
   return definition.fields.filter(([, , fieldBackend]) => !fieldBackend || fieldBackend === backend);
+}
+
+function visibleConfiguration(definition, backend, configuration) {
+  const visible = new Set(fieldsForBackend(definition, backend).filter(([key]) => editableFields.has(key)).map(([key]) => key));
+  return Object.fromEntries(Object.entries(configuration).filter(([key]) => visible.has(key)));
 }
 
 async function serviceConfigSource(service, configuration) {
@@ -434,13 +441,11 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
       const configMatch = url.pathname.match(/^\/api\/configurations\/([a-z0-9-]+)\/(docker|k3s)\/([a-z0-9-]+)$/);
       if (configMatch && request.method === 'GET') {
         const [, service, backend, targetId] = configMatch;
-        if (!services.some((item) => item.id === service)) throw Object.assign(new Error('Unknown service'), { status: 404 });
+        const definition = services.find((item) => item.id === service);
+        if (!definition) throw Object.assign(new Error('Unknown service'), { status: 404 });
         const saved = await readTargetOverrides(dataDir, service, backend, targetId) || {};
         const configuration = { ...serviceDefaults(service, backend), ...saved };
-        if (services.find((item) => item.id === service).fields.some(([key]) => key === 'configContents') && saved.configContents === undefined) {
-          configuration.configContents = await readFile(await serviceConfigSource(service, configuration), 'utf8');
-        }
-        json(response, 200, { configuration });
+        json(response, 200, { configuration: visibleConfiguration(definition, backend, configuration) });
         return;
       }
       if (configMatch && request.method === 'PUT') {
@@ -448,10 +453,11 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         const definition = services.find((item) => item.id === service);
         if (!definition) throw Object.assign(new Error('Unknown service'), { status: 404 });
         const input = await body(request);
-        const allowed = new Set(fieldsForBackend(definition, backend).map(([key]) => key));
+        const allowed = new Set(fieldsForBackend(definition, backend).map(([key]) => key).filter((key) => editableFields.has(key)));
         if (Object.keys(input).some((key) => !allowed.has(key))) throw Object.assign(new Error('Configuration contains unknown fields'), { status: 400 });
-        if (Object.entries(input).some(([key, value]) => typeof value !== 'string' || value.length > (key === 'configContents' ? 48_000 : 512) || value.includes('\0'))) throw Object.assign(new Error('Configuration fields must be text; file contents are limited to 48 KB and other fields to 512 characters'), { status: 400 });
-        const configuration = Object.fromEntries(Object.entries(input).map(([key, value]) => [key, value.trim()]));
+        if (Object.entries(input).some(([key, value]) => typeof value !== 'string' || value.length > 512 || value.includes('\0'))) throw Object.assign(new Error('Configuration fields must be text up to 512 characters'), { status: 400 });
+        const changes = Object.fromEntries(Object.entries(input).map(([key, value]) => [key, value.trim()]));
+        const configuration = { ...(await readTargetOverrides(dataDir, service, backend, targetId) || {}), ...changes };
         if (configuration.configFile) {
           try { await readFile(await serviceConfigSource(service, configuration)); }
           catch { throw Object.assign(new Error('Config file must exist inside the service directory'), { status: 400 }); }
@@ -460,14 +466,8 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         for (const key of portKeys) if (configuration[key] && (!/^\d{1,5}$/.test(configuration[key]) || Number(configuration[key]) < 1 || Number(configuration[key]) > 65535)) throw Object.assign(new Error(`${key} must be a port from 1 to 65535`), { status: 400 });
         if (configuration.image && !/^[a-zA-Z0-9._/:@-]+$/.test(configuration.image)) throw Object.assign(new Error('Image reference contains unsupported characters'), { status: 400 });
         if (configuration.dataPath && (!configuration.dataPath.startsWith('/') || configuration.dataPath.includes(':') || configuration.dataPath.split('/').includes('..'))) throw Object.assign(new Error('Data path must be an absolute Linux path'), { status: 400 });
-        for (const key of ['passwordSecret', 'passwordHashSecret']) if (configuration[key] && !/^[a-zA-Z0-9._-]+$/.test(configuration[key])) throw Object.assign(new Error(`${key} must be a secret filename`), { status: 400 });
-        if (configuration.ingressEnabled && !['true', 'false'].includes(configuration.ingressEnabled)) throw Object.assign(new Error('Ingress must be enabled or disabled'), { status: 400 });
-        if (configuration.ingressHost && !/^(?=.{1,253}$)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(\.([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/.test(configuration.ingressHost)) throw Object.assign(new Error('Ingress host must be a valid DNS name'), { status: 400 });
-        if (configuration.protocol && !['udp', 'tcp'].includes(configuration.protocol)) throw Object.assign(new Error('Protocol must be UDP or TCP'), { status: 400 });
-        if (configuration.network && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/.test(configuration.network)) throw Object.assign(new Error('Network name contains unsupported characters'), { status: 400 });
-        await readTargetOverrides(dataDir, service, backend, targetId);
         await saveDocument(configPath(dataDir, service, backend, targetId), { schemaVersion: 2, overrides: configuration });
-        json(response, 200, { configuration });
+        json(response, 200, { configuration: visibleConfiguration(definition, backend, { ...serviceDefaults(service, backend), ...configuration }) });
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/deployments') {
