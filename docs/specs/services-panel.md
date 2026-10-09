@@ -59,6 +59,17 @@ The panel is an operator interface for the existing service installers. It does 
 - Disconnect all twelve top-level submodules and nested submodules from this repository only after all their tracked file content is migrated. Preserve CI, docs, licenses, and helper files. Keep all upstream repositories.
 - Local mode binds only to `127.0.0.1:6868`. The K3s deployment configuration prepares Ingress host `admin.ravcube.com`, but production is not deployed as part of this work. With no login in v1, access remains limited to localhost and the cluster's internal network.
 
+## Configuration Model (current decision)
+
+This section supersedes earlier details that implied editing arbitrary service/backend fields or keeping duplicate common defaults in Compose and Helm.
+
+- Each service has one maintainer-owned declaration of common defaults. Fixed common fields cover image/tag, port mappings, non-secret environment values, persistent data paths, and configuration mount paths. Service declarations provide values only; they cannot add fields or change validation.
+- The same common defaults feed Docker and K3s. Native Compose and Helm assets remain deployment bases for complex or backend-specific settings, which are not edited in the panel in this first iteration.
+- The panel shows only applicable common fields for the selected service/backend. Application configuration file contents stay checked in; secrets stay external and are never returned to the browser or saved as values.
+- The panel stores operator overrides separately per service/backend/target under `.config/services/`. The selected base and common service defaults are overlaid by saved target values, which have highest priority and do not affect other targets.
+- **Save** updates only target state. **Deploy** renders and validates the selected Compose or Helm result before creating a deployment job.
+- Existing saved target values are migrated automatically and idempotently. Original files remain available until successful reading of migrated state is confirmed.
+
 ## Testing Decisions
 
 - Prefer one end-to-end integration seam at the panel's browser boundary: run the app with a temporary `.config/` store and fake external deployment adapters, then drive target selection, form editing, **Save**, and **Deploy** through the UI. Assert that Save persists without starting a job, Deploy uses the saved service/backend/target values, and job status/history/logs reflect success and failure.
