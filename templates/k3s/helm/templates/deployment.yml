@@ -1,83 +1,68 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.name | default .Release.Name }}
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
 spec:
-  replicas: {{ .Values.replicas | default 1 }}
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
-      app: {{ .Values.name | default .Release.Name }}
+      app: {{ .Values.name }}
   template:
     metadata:
       labels:
-        app: {{ .Values.name | default .Release.Name }}
+        app: {{ .Values.name }}
     spec:
       containers:
-        - name: {{ .Values.name | default .Release.Name }}
+        - name: {{ .Values.name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
-          {{- with .Values.image.args }}
-          args: {{ toJson . }}
-          {{- end }}
-          {{- if .Values.containerPorts }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.image.args }}
+          args: {{ .Values.image.args }}
+          {{- end}}
+          {{- if .Values.ports }}
           ports:
-            {{- toYaml .Values.containerPorts | nindent 12 }}
-          {{- else if .Values.ports }}
-          ports:
-            {{- range .Values.ports }}
+          {{- range .Values.ports  }}
             - containerPort: {{ . }}
-            {{- end }}
           {{- end }}
-          {{- with .Values.env }}
+          {{- end }}
+          {{- if .Values.env }}
           env:
-            {{- toYaml . | nindent 12 }}
+          {{- range .Values.env }}
+            - name: {{ .name }}
+              value: {{ .value }}
           {{- end }}
-          {{- if or .Values.volumes .Values.configMounts (and .Values.secrets .Values.secrets.enabled) }}
+          {{- end }}
+          {{- if or .Values.volumes .Values.configMounts }}
           volumeMounts:
-            {{- range .Values.volumes }}
+          {{- range .Values.volumes }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
-            {{- end }}
-            {{- range .Values.configMounts }}
+          {{- end }}
+          {{- range .Values.configMounts }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
-              {{- with .subPath }}
-              subPath: {{ . }}
+              {{- if .subPath }}
+              subPath: {{ .subPath }}
               {{- end }}
               {{- if .readOnly }}
               readOnly: true
               {{- end }}
-            {{- end }}
-            {{- if and .Values.secrets .Values.secrets.enabled }}
-            - name: app-secrets
-              mountPath: /run/secrets
-              readOnly: true
-            {{- end }}
           {{- end }}
-          {{- if .Values.containerSecurityContext }}
-          securityContext:
-            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- else if .Values.runAsUser }}
           securityContext:
             runAsUser: {{ .Values.runAsUser }}
           {{- end }}
-      {{- if or .Values.volumes .Values.configMounts (and .Values.secrets .Values.secrets.enabled) }}
+      {{- if or .Values.volumes .Values.configMounts }}
       volumes:
-        {{- range .Values.volumes }}
+      {{- range .Values.volumes }}
         - name: {{ .name }}
           hostPath:
             path: {{ .hostPath }}
-            type: {{ .type | default "DirectoryOrCreate" }}
-        {{- end }}
-        {{- range .Values.configMounts }}
+            type: DirectoryOrCreate
+      {{- end }}
+      {{- range .Values.configMounts }}
         - name: {{ .name }}
           configMap:
             name: {{ .configMap }}
-        {{- end }}
-        {{- if and .Values.secrets .Values.secrets.enabled }}
-        - name: app-secrets
-          secret:
-            secretName: {{ .Values.secrets.name }}
-        {{- end }}
+      {{- end }}
       {{- end }}

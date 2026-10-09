@@ -14,15 +14,3 @@ data:
 ---
 {{- end }}
 {{- end }}
-{{- if .Values.configFiles }}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Values.name }}-config
-  namespace: {{ .Values.namespace }}
-data:
-  {{- range $filename, $contents := .Values.configFiles }}
-  {{ $filename | quote }}: |-
-    {{- $contents | nindent 4 }}
-  {{- end }}
-{{- end }}

@@ -1,6 +1,0 @@
-apiVersion: v2
-name: nexus
-description: Nexus Repository service deployed on K3s
-type: application
-version: 0.1.0
-appVersion: "latest"
