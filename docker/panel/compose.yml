@@ -2,7 +2,7 @@ services:
   services-panel:
     build:
       context: ../..
-      dockerfile: panel/Dockerfile
+      dockerfile: web/Dockerfile
     container_name: services-panel
     restart: unless-stopped
     ports:

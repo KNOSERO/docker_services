@@ -1,0 +1,14 @@
+{
+  "common": {
+    "image": "grafana/grafana:latest",
+    "port": "3000",
+    "passwordSecret": "grafana_password",
+    "configFile": "config/grafana.ini",
+    "dataPath": "/mnt/core_data/grafana"
+  },
+  "docker": {},
+  "k3s": {
+    "ingressHost": "",
+    "ingressEnabled": "false"
+  }
+}

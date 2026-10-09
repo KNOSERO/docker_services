@@ -1,22 +1,31 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, serviceDefaults } from '../server.js';
+import { parse } from 'yaml';
+import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, helmValuesForDeployment, serviceDefaults } from '../api.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let root;
 let server;
 let baseUrl;
 let deployed;
+let validations;
+let validationResult;
 
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'services-panel-'));
   deployed = [];
+  validations = [];
+  validationResult = { code: 0, output: '' };
   server = createPanel({
     dataDir: root,
+    validator: async (job) => {
+      validations.push(job);
+      return typeof validationResult === 'function' ? validationResult(job) : validationResult;
+    },
     adapter: async (job) => {
       deployed.push(job);
       return { code: job.service === 'grafana' ? 1 : 0, output: job.service === 'grafana' ? 'deployment failed' : 'deployment complete' };
@@ -42,15 +51,10 @@ const saveTarget = async (target) => request('/api/targets', {
   body: JSON.stringify(target),
 });
 
-test('panel serves the Hermes-style application with the deployment controls', async () => {
-  const response = await fetch(baseUrl);
-  const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /Services Control Panel/);
-  assert.match(html, /assets\/panel.js/);
-  const script = await (await fetch(`${baseUrl}/assets/panel.js`)).text();
-  assert.match(script, /Save configuration/);
-  assert.match(script, /Deploy service/);
+test('panel API exposes its managed services', async () => {
+  const state = (await request('/api/state')).body;
+  assert.equal(state.services.length, 10);
+  assert.deepEqual(state.backends, ['docker', 'k3s']);
 });
 
 test('panel rejects cross-origin browser requests', async () => {
@@ -62,17 +66,97 @@ test('saving a deployment configuration persists it without creating a job', asy
   const saved = await request('/api/configurations/postgresql/docker/local', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ port: '5433', passwordSecret: 'postgres_password', configContents: "listen_addresses = '127.0.0.1'" }),
+    body: JSON.stringify({ port: '5433' }),
   });
 
   assert.equal(saved.status, 200);
   assert.equal(saved.body.configuration.port, '5433');
-  assert.equal(saved.body.configuration.configContents, "listen_addresses = '127.0.0.1'");
+  assert.equal('configContents' in saved.body.configuration, false);
   assert.equal('password' in saved.body.configuration, false);
   assert.equal((await request('/api/jobs')).body.length, 0);
   assert.match(await readFile(path.join(root, 'services', 'postgresql', 'docker', 'local.yml'), 'utf8'), /5433/);
-  assert.match(await readFile(path.join(root, 'services', 'postgresql', 'docker', 'local.yml'), 'utf8'), /127\.0\.0\.1/);
   assert.doesNotMatch(await readFile(path.join(root, 'services', 'postgresql', 'docker', 'local.yml'), 'utf8'), /real-secret-value/);
+});
+
+test('panel configuration defaults come from the tracked service catalog', async () => {
+  const response = await request('/api/configurations/postgresql/docker/catalog-check');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.configuration.image, 'postgres:16');
+  assert.equal(response.body.configuration.port, '5432');
+  assert.equal(response.body.configuration.dataPath, '/mnt/core_data/postgresql');
+  const state = (await request('/api/state')).body;
+  const proxy = state.services.find(({ id }) => id === 'proxy');
+  assert.equal(proxy.fields.find(([key]) => key === 'network'), undefined);
+});
+
+test('service forms expose only the agreed common fields with typed ports', async () => {
+  const state = (await request('/api/state')).body;
+  const field = (serviceId, key) => state.services.find(({ id }) => id === serviceId).fields.find(([name]) => name === key);
+
+  assert.equal(field('postgresql', 'image')[4], 'text');
+  assert.equal(field('postgresql', 'port')[4], 'number');
+  assert.equal(field('postgresql', 'database')[4], 'text');
+  assert.equal(field('postgresql', 'username')[4], 'text');
+  assert.equal(field('postgresql', 'dataPath')[4], 'text');
+  assert.equal(field('postgresql', 'configFile')[4], 'text');
+  for (const key of ['passwordSecret', 'configContents', 'network', 'dockerSocket', 'ingressHost', 'ingressEnabled']) {
+    assert.equal(field('postgresql', key), undefined, `postgresql form must not expose ${key}`);
+  }
+  assert.equal(field('proxy', 'network'), undefined);
+  assert.equal(field('portainer', 'dockerSocket'), undefined);
+  assert.equal(field('vpn', 'passwordHashSecret'), undefined);
+  assert.equal(field('dns', 'webPort')[4], 'number');
+});
+
+test('saving visible fields preserves hidden legacy target overrides', async () => {
+  const configFile = path.join(root, 'services', 'proxy', 'docker', 'hidden-state.yml');
+  await mkdir(path.dirname(configFile), { recursive: true });
+  await writeFile(configFile, JSON.stringify({ schemaVersion: 2, overrides: { httpPort: '80', network: 'legacy-network' } }));
+
+  const hiddenInput = await request('/api/configurations/proxy/docker/hidden-state', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'replacement-network' }),
+  });
+  assert.equal(hiddenInput.status, 400);
+
+  const saved = await request('/api/configurations/proxy/docker/hidden-state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ image: 'jc21/nginx-proxy-manager:latest', httpPort: '8080', httpsPort: '8443', adminPort: '8181', dataPath: '/srv/proxy', dnsServers: '192.168.0.2' }),
+  });
+
+  assert.equal(saved.status, 200);
+  assert.equal('network' in saved.body.configuration, false);
+  assert.deepEqual(JSON.parse(await readFile(configFile, 'utf8')).overrides, {
+    httpPort: '8080', network: 'legacy-network',
+    image: 'jc21/nginx-proxy-manager:latest', httpsPort: '8443', adminPort: '8181', dataPath: '/srv/proxy', dnsServers: '192.168.0.2',
+  });
+});
+
+test('legacy target configuration migrates once and remains recoverable', async () => {
+  const legacyPath = path.join(root, 'services', 'postgresql', 'docker', 'legacy-target.yml');
+  const legacy = '{"port":"5544","username":"legacy-user","passwordSecret":"legacy-password-file","configContents":"legacy app config"}\n';
+  await mkdir(path.dirname(legacyPath), { recursive: true });
+  await writeFile(legacyPath, legacy);
+
+  const migrated = await request('/api/configurations/postgresql/docker/legacy-target');
+  assert.equal(migrated.status, 200);
+  assert.equal(migrated.body.configuration.image, 'postgres:16');
+  assert.equal(migrated.body.configuration.port, '5544');
+  assert.equal('configContents' in migrated.body.configuration, false);
+  assert.equal('passwordSecret' in migrated.body.configuration, false);
+  assert.deepEqual(JSON.parse(await readFile(legacyPath, 'utf8')), {
+    schemaVersion: 2,
+    overrides: { port: '5544', username: 'legacy-user', passwordSecret: 'legacy-password-file' },
+  });
+  assert.equal(await readFile(`${legacyPath}.legacy`, 'utf8'), legacy);
+
+  const migratedFile = await readFile(legacyPath, 'utf8');
+  const again = await request('/api/configurations/postgresql/docker/legacy-target');
+  assert.equal(again.body.configuration.port, '5544');
+  assert.equal(await readFile(legacyPath, 'utf8'), migratedFile);
+  assert.equal(await readFile(`${legacyPath}.legacy`, 'utf8'), legacy);
+  assert.equal((await request('/api/configurations/postgresql/k3s/legacy-target')).body.configuration.port, '5432');
 });
 
 test('target profiles store secret references but never raw credential fields', async () => {
@@ -100,21 +184,74 @@ test('invalid or cross-backend configurations are rejected before a job is creat
   assert.equal((await request('/api/jobs')).body.length, 0);
 });
 
+test('render validation failure returns a useful error and creates no job', async () => {
+  await saveTarget({ id: 'preflight-host', name: 'Preflight host', backend: 'docker', host: '192.0.2.12', user: 'deploy', keySecret: 'id_home_lab' });
+  await request('/api/configurations/sonarqube/docker/preflight-host', {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port: '9000' }),
+  });
+  const jobsBefore = (await request('/api/jobs')).body.length;
+  const deploysBefore = deployed.length;
+  validationResult = { code: 1, output: 'services.sonarqube.ports must be a list' };
+
+  const response = await request('/api/deployments', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ service: 'sonarqube', backend: 'docker', targetId: 'preflight-host' }),
+  });
+
+  assert.equal(response.status, 422);
+  assert.match(response.body.error, /Compose validation failed/);
+  assert.match(response.body.error, /ports must be a list/);
+  assert.deepEqual(
+    { service: validations.at(-1).service, backend: validations.at(-1).backend, targetId: validations.at(-1).targetId, port: validations.at(-1).configuration.port },
+    { service: 'sonarqube', backend: 'docker', targetId: 'preflight-host', port: '9000' },
+  );
+  assert.equal((await request('/api/jobs')).body.length, jobsBefore);
+  assert.equal(deployed.length, deploysBefore);
+  validationResult = { code: 0, output: '' };
+});
+
+test('legacy hidden backend overrides are retained but excluded from rendered deployment input', async () => {
+  await saveTarget({ id: 'legacy-docker', name: 'Legacy Docker', backend: 'docker', host: '192.0.2.13', user: 'deploy', keySecret: 'id_home_lab' });
+  const legacyPath = path.join(root, 'services', 'proxy', 'docker', 'legacy-docker.yml');
+  const legacy = { schemaVersion: 2, overrides: { httpPort: '8080', network: 'untrusted-network' } };
+  await mkdir(path.dirname(legacyPath), { recursive: true });
+  await writeFile(legacyPath, JSON.stringify(legacy));
+  validationResult = async (job) => ({ compose: await dockerComposeFromBase(job.service, job.configuration) });
+
+  const response = await request('/api/deployments', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ service: 'proxy', backend: 'docker', targetId: 'legacy-docker' }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(response.status, 202);
+  assert.equal('network' in validations.at(-1).configuration, false);
+  assert.deepEqual(deployed.at(-1).rendered.compose.services.proxy.networks, ['proxy']);
+  assert.deepEqual(deployed.at(-1).rendered.compose.networks.proxy, { external: true });
+  assert.deepEqual(JSON.parse(await readFile(legacyPath, 'utf8')), legacy);
+  validationResult = { code: 0, output: '' };
+});
+
 test('every managed service has Docker and K3s deployment definitions', async () => {
   const state = (await request('/api/state')).body;
   assert.equal(state.services.length, 10);
   for (const service of state.services) {
     const serviceRoot = path.join(projectRoot, 'services', service.id);
+    const defaults = parse(await readFile(path.join(serviceRoot, 'service-defaults.yml'), 'utf8'));
+    assert.ok(defaults.common.image, `${service.id} must define its shared image default`);
+    for (const [key, , fallback, backend] of service.fields) {
+      assert.equal(fallback, defaults.common[key] ?? defaults[backend || 'docker'][key] ?? defaults.k3s[key] ?? '', `${service.id}.${key} API default must come from its service YAML`);
+    }
     const compose = await readFile(path.join(serviceRoot, 'docker-compose.yml'), 'utf8');
     assert.doesNotMatch(compose, /^\*\*\* Add File:/m);
-    assert.ok(JSON.parse(compose).services[service.id], `${service.id} Compose must parse and define its service`);
+    assert.ok(parse(compose).services[service.id], `${service.id} Compose must parse and define its service`);
     await readFile(path.join(serviceRoot, 'helm', 'Chart.yaml'), 'utf8');
     const helmValues = JSON.parse(await readFile(path.join(serviceRoot, 'helm', 'values.yaml'), 'utf8'));
     assert.equal(helmValues.name, service.id);
     assert.notEqual(helmValues.image.repository, 'hello-world');
   }
   const vpn = state.services.find(({ id }) => id === 'vpn');
-  assert.ok(vpn.fields.some(([key]) => key === 'passwordHashSecret'));
+  assert.equal(vpn.fields.some(([key]) => key === 'passwordHashSecret'), false);
   assert.ok(vpn.fields.some(([key]) => key === 'allowedIPs'));
   const postgresql = state.services.find(({ id }) => id === 'postgresql');
   assert.ok(postgresql.fields.some(([key]) => key === 'configFile'));
@@ -165,19 +302,27 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(compose.services.postgresql.container_name, 'postgresql');
   assert.deepEqual(compose.services.postgresql.ports, ['5433:5432']);
   assert.ok(compose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/postgresql.conf:ro')));
+  const portainerCompose = await dockerComposeFromBase('portainer', { ...serviceDefaults('portainer', 'docker'), dockerSocket: 'false' });
+  assert.ok(portainerCompose.services.portainer.volumes.includes('/var/run/docker.sock:/var/run/docker.sock'));
+
+  const helmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), port: '3333', ingressHost: 'hidden.example', ingressEnabled: 'true' });
+  assert.deepEqual(helmValues.ingress.hosts.map(({ domain }) => domain), ['grafana.k3s.ravnet', 'grafana.ravcube.com']);
+  assert.equal(helmValues.service.type, 'NodePort');
+  assert.equal(helmValues.runAsUser, 0);
+  assert.equal(helmValues.servicePorts[0].port, 3333);
 });
 
 test('configuration editor returns safe defaults and rejects paths outside the service', async () => {
   const defaults = await request('/api/configurations/grafana/docker/local');
   assert.equal(defaults.status, 200);
-  assert.match(defaults.body.configuration.configContents, /\[auth\.anonymous\]/);
+  assert.equal(defaults.body.configuration.configFile, 'config/grafana.ini');
+  assert.equal('configContents' in defaults.body.configuration, false);
 
-  const edited = await request('/api/configurations/grafana/docker/local', {
+  const editedContents = await request('/api/configurations/grafana/docker/local', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ configContents: '[server]\nhttp_port = 3333' }),
   });
-  assert.equal(edited.status, 200);
-  assert.equal(edited.body.configuration.configContents, '[server]\nhttp_port = 3333');
+  assert.equal(editedContents.status, 400);
 
   const invalid = await request('/api/configurations/grafana/docker/local', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -193,6 +338,7 @@ test('deploy uses the saved service/backend/target configuration and records suc
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ port: '5434' }),
   });
+  validationResult = async (job) => ({ compose: await dockerComposeFromBase(job.service, job.configuration) });
 
   const started = await request('/api/deployments', {
     method: 'POST',
@@ -203,13 +349,14 @@ test('deploy uses the saved service/backend/target configuration and records suc
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const jobs = (await request('/api/jobs')).body;
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0].status, 'succeeded');
-  assert.equal(deployed[0].service, 'postgresql');
-  assert.equal(deployed[0].backend, 'docker');
-  assert.equal(deployed[0].targetId, 'local');
-  assert.equal(deployed[0].configuration.port, '5434');
+  assert.equal(jobs.find(({ id }) => id === started.body.id).status, 'succeeded');
+  assert.equal(deployed.at(-1).service, 'postgresql');
+  assert.equal(deployed.at(-1).backend, 'docker');
+  assert.equal(deployed.at(-1).targetId, 'local');
+  assert.equal(deployed.at(-1).configuration.port, '5434');
+  assert.deepEqual(deployed.at(-1).rendered.compose.services.postgresql.ports, ['5434:5432']);
   assert.equal((await request(`/api/jobs/${started.body.id}`)).body.logs, 'deployment complete');
+  validationResult = { code: 0, output: '' };
 });
 
 test('failed deployments are visible in job status, history, and logs', async () => {

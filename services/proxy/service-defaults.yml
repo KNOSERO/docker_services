@@ -1,0 +1,17 @@
+{
+  "common": {
+    "image": "jc21/nginx-proxy-manager:latest",
+    "httpPort": "80",
+    "httpsPort": "443",
+    "adminPort": "81",
+    "dataPath": "/mnt/core_data/proxy",
+    "dnsServers": "192.168.0.2,192.168.0.3"
+  },
+  "docker": {
+    "network": "proxy"
+  },
+  "k3s": {
+    "ingressHost": "",
+    "ingressEnabled": "false"
+  }
+}

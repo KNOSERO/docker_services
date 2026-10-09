@@ -1,0 +1,12 @@
+{
+  "common": {
+    "image": "sonarqube:lts-community",
+    "port": "9000",
+    "dataPath": "/mnt/core_data/sonarqube"
+  },
+  "docker": {},
+  "k3s": {
+    "ingressHost": "",
+    "ingressEnabled": "false"
+  }
+}
