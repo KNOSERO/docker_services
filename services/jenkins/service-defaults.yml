@@ -5,10 +5,5 @@
     "agentPort": "50000",
     "timezone": "Europe/Warsaw",
     "dataPath": "/mnt/core_data/jenkins"
-  },
-  "docker": {},
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
   }
 }

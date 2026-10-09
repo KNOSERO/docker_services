@@ -3,11 +3,7 @@
     "image": "prom/prometheus:latest",
     "port": "9090",
     "configFile": "config/prometheus.yml",
+    "configMountPath": "/etc/prometheus/prometheus.yml",
     "dataPath": "/mnt/core_data/prometheus"
-  },
-  "docker": {},
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
   }
 }

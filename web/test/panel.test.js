@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
-import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, helmValuesForDeployment, serviceDefaults } from '../api.js';
+import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, helmValuesForDeployment, serviceDefaults, validateRenderedDeployment } from '../api.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let root;
@@ -99,6 +99,9 @@ test('service forms expose only the agreed common fields with typed ports', asyn
   assert.equal(field('postgresql', 'username')[4], 'text');
   assert.equal(field('postgresql', 'dataPath')[4], 'text');
   assert.equal(field('postgresql', 'configFile')[4], 'text');
+  assert.equal(field('postgresql', 'configMountPath')[2], '/etc/postgresql/postgresql.conf');
+  assert.equal(field('grafana', 'configMountPath')[2], '/etc/grafana/grafana.ini');
+  assert.equal(field('prometheus', 'configMountPath')[2], '/etc/prometheus/prometheus.yml');
   for (const key of ['passwordSecret', 'configContents', 'network', 'dockerSocket', 'ingressHost', 'ingressEnabled']) {
     assert.equal(field('postgresql', key), undefined, `postgresql form must not expose ${key}`);
   }
@@ -106,6 +109,37 @@ test('service forms expose only the agreed common fields with typed ports', asyn
   assert.equal(field('portainer', 'dockerSocket'), undefined);
   assert.equal(field('vpn', 'passwordHashSecret'), undefined);
   assert.equal(field('dns', 'webPort')[4], 'number');
+});
+
+test('Docker preflight validates VPN Compose without resolving target-side env files', async () => {
+  let invocation;
+  const result = await validateRenderedDeployment({ service: 'vpn', backend: 'docker', configuration: serviceDefaults('vpn') }, async (program, args) => {
+    invocation = { program, args };
+    return { code: 0, output: '' };
+  });
+
+  assert.equal(invocation.program, 'docker');
+  assert.deepEqual(invocation.args.slice(0, 2), ['compose', '-f']);
+  assert.equal(invocation.args[3], 'config');
+  assert.ok(invocation.args.includes('--no-env-resolution'));
+  assert.equal(invocation.args.at(-1), '-q');
+  assert.deepEqual(result.compose.services.vpn.env_file, ['/opt/docker-secrets/vpn/password_hash.env']);
+});
+
+test('configuration mount destinations can be edited and must remain safe absolute container paths', async () => {
+  const saved = await request('/api/configurations/postgresql/docker/mount-target', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ configMountPath: '/custom/postgresql.conf' }),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await request('/api/configurations/postgresql/docker/mount-target')).body.configuration.configMountPath, '/custom/postgresql.conf');
+
+  for (const configMountPath of ['', 'relative/postgresql.conf', '/', '/etc/../secrets/postgresql.conf', '/etc/postgresql:conf']) {
+    const invalid = await request('/api/configurations/postgresql/docker/mount-target', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ configMountPath }),
+    });
+    assert.equal(invalid.status, 400, `must reject ${configMountPath}`);
+  }
 });
 
 test('saving visible fields preserves hidden legacy target overrides', async () => {
@@ -238,9 +272,10 @@ test('every managed service has Docker and K3s deployment definitions', async ()
   for (const service of state.services) {
     const serviceRoot = path.join(projectRoot, 'services', service.id);
     const defaults = parse(await readFile(path.join(serviceRoot, 'service-defaults.yml'), 'utf8'));
+    assert.deepEqual(Object.keys(defaults), ['common'], `${service.id} defaults must not duplicate backend settings`);
     assert.ok(defaults.common.image, `${service.id} must define its shared image default`);
     for (const [key, , fallback, backend] of service.fields) {
-      assert.equal(fallback, defaults.common[key] ?? defaults[backend || 'docker'][key] ?? defaults.k3s[key] ?? '', `${service.id}.${key} API default must come from its service YAML`);
+      assert.equal(fallback, defaults.common[key] ?? defaults[backend || 'docker']?.[key] ?? defaults.k3s?.[key] ?? '', `${service.id}.${key} API default must come from its service YAML`);
     }
     const compose = await readFile(path.join(serviceRoot, 'docker-compose.yml'), 'utf8');
     assert.doesNotMatch(compose, /^\*\*\* Add File:/m);
@@ -302,14 +337,35 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(compose.services.postgresql.container_name, 'postgresql');
   assert.deepEqual(compose.services.postgresql.ports, ['5433:5432']);
   assert.ok(compose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/postgresql.conf:ro')));
+  const customCompose = await dockerComposeFromBase('postgresql', { ...serviceDefaults('postgresql'), configMountPath: '/etc/postgresql/custom.conf' });
+  assert.ok(customCompose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/custom.conf:ro')));
+  assert.equal(customCompose.services.postgresql.volumes.some((mount) => mount.endsWith(':/etc/postgresql/postgresql.conf:ro')), false);
   const portainerCompose = await dockerComposeFromBase('portainer', { ...serviceDefaults('portainer', 'docker'), dockerSocket: 'false' });
   assert.ok(portainerCompose.services.portainer.volumes.includes('/var/run/docker.sock:/var/run/docker.sock'));
+  assert.equal(serviceDefaults('portainer', 'docker').dockerSocket, undefined);
+  assert.equal(serviceDefaults('proxy', 'docker').network, undefined);
+  assert.equal(serviceDefaults('dns', 'k3s').ingressHost, undefined);
 
   const helmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), port: '3333', ingressHost: 'hidden.example', ingressEnabled: 'true' });
   assert.deepEqual(helmValues.ingress.hosts.map(({ domain }) => domain), ['grafana.k3s.ravnet', 'grafana.ravcube.com']);
   assert.equal(helmValues.service.type, 'NodePort');
   assert.equal(helmValues.runAsUser, 0);
   assert.equal(helmValues.servicePorts[0].port, 3333);
+  const customHelmValues = await helmValuesForDeployment('grafana', { ...serviceDefaults('grafana', 'k3s'), configMountPath: '/etc/grafana/custom.ini' });
+  assert.equal(customHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/custom.ini');
+  const legacyHelmValues = await helmValuesForDeployment('grafana', { port: '3000' });
+  assert.equal(legacyHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/grafana.ini');
+  const basePortainerHelmValues = parse(await readFile(path.join(projectRoot, 'services', 'portainer', 'helm', 'values.yaml'), 'utf8'));
+  const renderedPortainerHelmValues = await helmValuesForDeployment('portainer', serviceDefaults('portainer', 'k3s'));
+  assert.deepEqual(renderedPortainerHelmValues.volumes.find(({ name }) => name === 'docker-socket'), basePortainerHelmValues.volumes.find(({ name }) => name === 'docker-socket'));
+  const baseVpnHelmValues = parse(await readFile(path.join(projectRoot, 'services', 'vpn', 'helm', 'values.yaml'), 'utf8'));
+  const renderedVpnHelmValues = await helmValuesForDeployment('vpn', serviceDefaults('vpn', 'k3s'));
+  assert.equal(renderedVpnHelmValues.hostNetwork, baseVpnHelmValues.hostNetwork);
+  assert.deepEqual(renderedVpnHelmValues.volumes.find(({ name }) => name === 'tun'), baseVpnHelmValues.volumes.find(({ name }) => name === 'tun'));
+  const baseDnsHelmValues = parse(await readFile(path.join(projectRoot, 'services', 'dns', 'helm', 'values.yaml'), 'utf8'));
+  const renderedDnsHelmValues = await helmValuesForDeployment('dns', serviceDefaults('dns', 'k3s'));
+  assert.equal(renderedDnsHelmValues.hostNetwork, baseDnsHelmValues.hostNetwork);
+  assert.deepEqual(renderedDnsHelmValues.volumes.find(({ name }) => name === 'dnsmasq'), baseDnsHelmValues.volumes.find(({ name }) => name === 'dnsmasq'));
 });
 
 test('configuration editor returns safe defaults and rejects paths outside the service', async () => {

@@ -4,10 +4,5 @@
     "port": "8081",
     "registryPort": "5000",
     "dataPath": "/mnt/core_data/nexus"
-  },
-  "docker": {},
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
   }
 }

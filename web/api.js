@@ -10,10 +10,10 @@ import { parse } from 'yaml';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const services = [
-  { id: 'postgresql', name: 'PostgreSQL', group: 'Database', description: 'Relational database', fields: [['image', 'Image'], ['port', 'Port'], ['database', 'Database'], ['username', 'Username'], ['passwordSecret', 'Password secret filename'], ['configFile', 'PostgreSQL config file'], ['dataPath', 'Data path']] },
+  { id: 'postgresql', name: 'PostgreSQL', group: 'Database', description: 'Relational database', fields: [['image', 'Image'], ['port', 'Port'], ['database', 'Database'], ['username', 'Username'], ['passwordSecret', 'Password secret filename'], ['configFile', 'PostgreSQL config file'], ['configMountPath', 'Configuration mount path'], ['dataPath', 'Data path']] },
   { id: 'sonarqube', name: 'SonarQube', group: 'Development', description: 'Code quality and security analysis', fields: [['image', 'Image'], ['port', 'Web port'], ['dataPath', 'Data path']] },
-  { id: 'grafana', name: 'Grafana', group: 'Monitoring', description: 'Metrics dashboards', fields: [['image', 'Image'], ['port', 'Web port'], ['passwordSecret', 'Admin password secret filename'], ['configFile', 'Grafana config file'], ['dataPath', 'Data path']] },
-  { id: 'prometheus', name: 'Prometheus', group: 'Monitoring', description: 'Metrics collection and alerting', fields: [['image', 'Image'], ['port', 'Web port'], ['configFile', 'Prometheus config file'], ['dataPath', 'Data path']] },
+  { id: 'grafana', name: 'Grafana', group: 'Monitoring', description: 'Metrics dashboards', fields: [['image', 'Image'], ['port', 'Web port'], ['passwordSecret', 'Admin password secret filename'], ['configFile', 'Grafana config file'], ['configMountPath', 'Configuration mount path'], ['dataPath', 'Data path']] },
+  { id: 'prometheus', name: 'Prometheus', group: 'Monitoring', description: 'Metrics collection and alerting', fields: [['image', 'Image'], ['port', 'Web port'], ['configFile', 'Prometheus config file'], ['configMountPath', 'Configuration mount path'], ['dataPath', 'Data path']] },
   { id: 'proxy', name: 'Proxy', group: 'Infrastructure', description: 'Reverse proxy and certificate management', fields: [['image', 'Image'], ['httpPort', 'HTTP port'], ['httpsPort', 'HTTPS port'], ['adminPort', 'Admin port'], ['dataPath', 'Data path'], ['network', 'Docker network', 'docker'], ['dnsServers', 'DNS servers']] },
   { id: 'portainer', name: 'Portainer', group: 'Infrastructure', description: 'Container management interface', fields: [['image', 'Image'], ['port', 'Web port'], ['dataPath', 'Data path'], ['dockerSocket', 'Mount Docker socket', 'docker']] },
   { id: 'dns', name: 'DNS', group: 'Infrastructure', description: 'Pi-hole DNS and DHCP', fields: [['image', 'Image'], ['webPort', 'Web port'], ['dnsPort', 'DNS port'], ['timezone', 'Timezone'], ['dataPath', 'Data path'], ['network', 'Docker network', 'docker']] },
@@ -24,7 +24,7 @@ const services = [
 for (const definition of services) definition.fields.push(['ingressHost', 'Ingress hostname', 'k3s'], ['ingressEnabled', 'Enable ingress (true/false)', 'k3s']);
 
 const backends = ['docker', 'k3s'];
-const editableFields = new Set(['image', 'port', 'httpPort', 'httpsPort', 'adminPort', 'webPort', 'dnsPort', 'registryPort', 'agentPort', 'vpnPort', 'database', 'username', 'timezone', 'host', 'dnsServers', 'allowedIPs', 'dataPath', 'configFile']);
+const editableFields = new Set(['image', 'port', 'httpPort', 'httpsPort', 'adminPort', 'webPort', 'dnsPort', 'registryPort', 'agentPort', 'vpnPort', 'database', 'username', 'timezone', 'host', 'dnsServers', 'allowedIPs', 'dataPath', 'configFile', 'configMountPath']);
 const portFields = new Set(['port', 'httpPort', 'httpsPort', 'adminPort', 'webPort', 'dnsPort', 'registryPort', 'agentPort', 'vpnPort']);
 const configPath = (dataDir, service, backend, targetId) => path.join(dataDir, 'services', service, backend, `${targetId}.yml`);
 const yaml = (value) => `${JSON.stringify(value, null, 2)}\n`;
@@ -209,7 +209,7 @@ export function deploymentValues(service, configuration, backend = 'k3s') {
   if (service === 'vpn') volumes.push({ name: 'tun', hostPath: '/dev/net/tun', mountPath: '/dev/net/tun', type: 'CharDevice' });
   const containerSecurityContext = service === 'vpn' ? { capabilities: { add: ['NET_ADMIN'] } } : undefined;
   return {
-    name: service, namespace: service, replicas: 1,
+    name: service, namespace: service, replicas: 1, configMountPath: values.configMountPath,
     image: { repository, tag, pullPolicy: 'IfNotPresent', ...(service === 'postgresql' ? { args: ['-c', 'config_file=/etc/postgresql/postgresql.conf'] } : {}) }, service: { type: 'ClusterIP' }, ports, servicePorts,
     containerPorts: [...new Map(servicePorts.map((port) => [`${port.targetPort}/${port.protocol || 'TCP'}`, { containerPort: port.targetPort, protocol: port.protocol || 'TCP' }])).values()],
     env, runAsUser: service === 'grafana' ? 472 : service === 'sonarqube' ? 1000 : 0,
@@ -218,9 +218,9 @@ export function deploymentValues(service, configuration, backend = 'k3s') {
     hostNetwork: ['dns', 'vpn'].includes(service),
     podDnsConfig: service === 'proxy' ? { nameservers: String(values.dnsServers).split(',').map((server) => server.trim()).filter(Boolean) } : undefined,
     configMounts: ({
-      postgresql: [{ name: 'postgresql-config', configMap: 'postgresql-config', mountPath: '/etc/postgresql/postgresql.conf', subPath: 'postgresql.conf', readOnly: true }],
-      grafana: [{ name: 'grafana-config', configMap: 'grafana-config', mountPath: '/etc/grafana/grafana.ini', subPath: 'grafana.ini', readOnly: true }],
-      prometheus: [{ name: 'prometheus-config', configMap: 'prometheus-config', mountPath: '/etc/prometheus/prometheus.yml', subPath: 'prometheus.yml', readOnly: true }],
+      postgresql: [{ name: 'postgresql-config', configMap: 'postgresql-config', mountPath: values.configMountPath, subPath: 'postgresql.conf', readOnly: true }],
+      grafana: [{ name: 'grafana-config', configMap: 'grafana-config', mountPath: values.configMountPath, subPath: 'grafana.ini', readOnly: true }],
+      prometheus: [{ name: 'prometheus-config', configMap: 'prometheus-config', mountPath: values.configMountPath, subPath: 'prometheus.yml', readOnly: true }],
     })[service] || [],
     configMaps: ({ postgresql: [{ name: 'postgresql', path: 'config/postgresql.conf' }], grafana: [{ name: 'grafana', path: 'config/grafana.ini' }], prometheus: [{ name: 'prometheus', path: 'config/prometheus.yml' }] })[service] || [],
     ingress: { hosts: values.ingressEnabled === 'true' && values.ingressHost ? [{ domain: values.ingressHost, port: servicePorts[0].port }] : [] },
@@ -250,7 +250,7 @@ export function dockerCompose(service, configuration) {
   if (service === 'postgresql') {
     app.ports = [`${config.port}:5432`];
     app.command = ['-c', 'config_file=/etc/postgresql/postgresql.conf'];
-    app.volumes.push(`/opt/docker/${service}/${path.basename(config.configFile || 'postgresql.conf')}:/etc/postgresql/postgresql.conf:ro`);
+    app.volumes.push(`/opt/docker/${service}/${path.basename(config.configFile || 'postgresql.conf')}:${config.configMountPath}:ro`);
   }
   if (service === 'sonarqube') app.ports = [`${config.port}:9000`];
   if (service === 'grafana') app.ports = [`${config.port}:3000`];
@@ -273,9 +273,9 @@ export function dockerCompose(service, configuration) {
   if (service === 'prometheus') {
     const filename = path.basename(config.configFile || 'prometheus.yml');
     app.command = ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.path=/prometheus'];
-    app.volumes.push(`/opt/docker/${service}/${filename}:/etc/prometheus/prometheus.yml:ro`);
+    app.volumes.push(`/opt/docker/${service}/${filename}:${config.configMountPath}:ro`);
   }
-  if (service === 'grafana') app.volumes.push(`/opt/docker/${service}/${path.basename(config.configFile || 'grafana.ini')}:/etc/grafana/grafana.ini:ro`);
+  if (service === 'grafana') app.volumes.push(`/opt/docker/${service}/${path.basename(config.configFile || 'grafana.ini')}:${config.configMountPath}:ro`);
   if (['proxy', 'dns'].includes(service) && config.network) app.networks = [config.network];
   if (service === 'proxy') app.dns = String(config.dnsServers).split(',').map((server) => server.trim()).filter(Boolean);
   const networks = app.networks?.length ? Object.fromEntries(app.networks.map((name) => [name, { external: true }])) : undefined;
@@ -292,6 +292,9 @@ export async function dockerComposeFromBase(service, configuration) {
   const generated = rendered.services[service];
   const volumeTarget = (mount) => mount.split(':')[1];
   const volumes = new Map((original.volumes || []).map((mount) => [volumeTarget(mount), mount]));
+  if (['postgresql', 'grafana', 'prometheus'].includes(service)) {
+    for (const [target, mount] of volumes) if (mount.startsWith(`/opt/docker/${service}/`)) volumes.delete(target);
+  }
   for (const mount of generated.volumes || []) {
     if (/\/(run\/secrets|var\/run\/docker\.sock|dev\/net\/tun)(:|$)/.test(volumeTarget(mount))) continue;
     volumes.set(volumeTarget(mount), mount);
@@ -353,27 +356,27 @@ export async function helmValuesForDeployment(service, configuration) {
   values.servicePorts = mergeNamedValues(nativeValues.servicePorts, generated.servicePorts);
   values.containerPorts = mergeNamedValues(nativeValues.containerPorts, generated.containerPorts, ({ containerPort, protocol }) => `${containerPort}/${protocol}`);
   values.env = mergeNamedValues(nativeValues.env, commonEnvironment(service, generated.env));
-  values.volumes = mergeNamedValues(nativeValues.volumes, generated.volumes);
+  values.volumes = mergeNamedValues(nativeValues.volumes, generated.volumes.filter(({ name }) => !['docker-socket', 'tun'].includes(name)));
   if (generated.podDnsConfig) values.podDnsConfig = mergeValues(nativeValues.podDnsConfig, generated.podDnsConfig);
   const source = await serviceConfigSource(service, configuration);
   if (source) {
     const filename = path.basename(source);
     values.configFiles = { [filename]: configuration.configContents ?? await readFile(source, 'utf8') };
-    const pathInContainer = { postgresql: '/etc/postgresql/postgresql.conf', prometheus: '/etc/prometheus/prometheus.yml', grafana: '/etc/grafana/grafana.ini' }[service];
+    const pathInContainer = generated.configMountPath;
     values.configMounts = mergeNamedValues(nativeValues.configMounts, [{ name: `${service}-config`, configMap: `${service}-config`, mountPath: pathInContainer, subPath: filename, readOnly: true }]);
     values.configMaps = [];
   }
   return values;
 }
 
-async function validateRenderedDeployment(job) {
+export async function validateRenderedDeployment(job, runCommand = command) {
   const temporary = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'panel-validation-')));
   try {
     if (job.backend === 'docker') {
       const composeFile = path.join(temporary, 'docker-compose.yml');
       const compose = await dockerComposeFromBase(job.service, job.configuration);
       await writeFile(composeFile, yaml(compose), { mode: 0o600 });
-      const result = await command('docker', ['compose', '-f', composeFile, 'config', '-q']);
+      const result = await runCommand('docker', ['compose', '-f', composeFile, 'config', '--no-env-resolution', '-q']);
       if (result.code !== 0) throw Object.assign(new Error(`Compose validation failed: ${result.output.trim() || 'Docker Compose could not validate the rendered configuration'}`), { status: 422 });
       return { compose };
     }
@@ -387,7 +390,7 @@ async function validateRenderedDeployment(job) {
       ['lint', ['lint', chart, ...valuesArgs]],
       ['render', ['template', job.service, chart, '--namespace', job.service, ...valuesArgs]],
     ]) {
-      const result = await command('helm', args);
+      const result = await runCommand('helm', args);
       if (result.code !== 0) throw Object.assign(new Error(`Helm ${label} validation failed: ${result.output.trim() || 'Helm could not validate the rendered configuration'}`), { status: 422 });
     }
     return { helmValues };
@@ -532,7 +535,8 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         if (Object.keys(input).some((key) => !allowed.has(key))) throw Object.assign(new Error('Configuration contains unknown fields'), { status: 400 });
         if (Object.entries(input).some(([key, value]) => typeof value !== 'string' || value.length > 512 || value.includes('\0'))) throw Object.assign(new Error('Configuration fields must be text up to 512 characters'), { status: 400 });
         const changes = Object.fromEntries(Object.entries(input).map(([key, value]) => [key, value.trim()]));
-        const configuration = { ...(await readTargetOverrides(dataDir, service, backend, targetId) || {}), ...changes };
+        const overrides = { ...(await readTargetOverrides(dataDir, service, backend, targetId) || {}), ...changes };
+        const configuration = { ...serviceDefaults(service, backend), ...overrides };
         if (configuration.configFile) {
           try { await readFile(await serviceConfigSource(service, configuration)); }
           catch { throw Object.assign(new Error('Config file must exist inside the service directory'), { status: 400 }); }
@@ -541,8 +545,9 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         for (const key of portKeys) if (configuration[key] && (!/^\d{1,5}$/.test(configuration[key]) || Number(configuration[key]) < 1 || Number(configuration[key]) > 65535)) throw Object.assign(new Error(`${key} must be a port from 1 to 65535`), { status: 400 });
         if (configuration.image && !/^[a-zA-Z0-9._/:@-]+$/.test(configuration.image)) throw Object.assign(new Error('Image reference contains unsupported characters'), { status: 400 });
         if (configuration.dataPath && (!configuration.dataPath.startsWith('/') || configuration.dataPath.includes(':') || configuration.dataPath.split('/').includes('..'))) throw Object.assign(new Error('Data path must be an absolute Linux path'), { status: 400 });
-        await saveDocument(configPath(dataDir, service, backend, targetId), { schemaVersion: 2, overrides: configuration });
-        json(response, 200, { configuration: visibleConfiguration(definition, backend, { ...serviceDefaults(service, backend), ...configuration }) });
+        if (definition.fields.some(([key]) => key === 'configMountPath') && (!/^\/[A-Za-z0-9._/-]+$/.test(configuration.configMountPath || '') || configuration.configMountPath === '/' || configuration.configMountPath.split('/').some((part) => part === '.' || part === '..'))) throw Object.assign(new Error('Configuration mount path must be a safe absolute container path'), { status: 400 });
+        await saveDocument(configPath(dataDir, service, backend, targetId), { schemaVersion: 2, overrides });
+        json(response, 200, { configuration: visibleConfiguration(definition, backend, configuration) });
         return;
       }
       if (request.method === 'POST' && url.pathname === '/api/deployments') {

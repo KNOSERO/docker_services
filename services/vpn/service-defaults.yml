@@ -8,10 +8,5 @@
     "dnsServers": "192.168.0.5,192.168.0.6",
     "allowedIPs": "0.0.0.0/0,::/0,192.168.0.0/24",
     "dataPath": "/mnt/core_data/docker/etc/wireguard"
-  },
-  "docker": {},
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
   }
 }

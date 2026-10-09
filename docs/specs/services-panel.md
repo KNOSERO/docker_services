@@ -63,8 +63,8 @@ The panel is an operator interface for the existing service installers. It does 
 
 This section supersedes earlier details that implied editing arbitrary service/backend fields or keeping duplicate common defaults in Compose and Helm.
 
-- The fixed common schema and validation live in panel code. Each service has one maintainer-owned `services/<service>/service-defaults.yml` file with `common` defaults and optional `docker` or `k3s` additions; the file provides values only and cannot add fields or change validation. Existing `services/<service>/config.yml` files remain Helm overrides where Jenkins already consumes them.
-- The same common defaults feed Docker and K3s. Native Compose and Helm assets remain deployment bases for complex or backend-specific settings, which are not edited in the panel in this first iteration.
+- The fixed common schema and validation live in panel code. Each service has one maintainer-owned `services/<service>/service-defaults.yml` file containing common values only; the file cannot add fields or change validation. Existing `services/<service>/config.yml` files remain Helm overrides where Jenkins already consumes them.
+- The same common defaults feed Docker and K3s. Native Compose and Helm assets remain the sole source for complex or backend-specific settings. In services with checked-in application config, `configFile` selects its repository source and `configMountPath` controls its container destination.
 - The panel shows only applicable common fields for the selected service/backend. Application configuration file contents stay checked in; secrets stay external and are never returned to the browser or saved as values.
 - The panel stores operator overrides separately per service/backend/target under `.config/services/`. Render precedence is native backend base, shared service defaults, then the selected target override. This keeps backend-only settings native while making common values consistent; target overrides have highest priority and do not affect other targets.
 - Target override files use schema version 2. The first read of a legacy unversioned file writes a `.legacy` copy, atomically stores the versioned values, and verifies the saved copy can be read. The legacy copy is retained; repeating the read does not migrate or rewrite it again.
@@ -76,7 +76,7 @@ This section supersedes earlier details that implied editing arbitrary service/b
 - Prefer one end-to-end integration seam at the panel's browser boundary: run the app with a temporary `.config/` store and fake external deployment adapters, then drive target selection, form editing, **Save**, and **Deploy** through the UI. Assert that Save persists without starting a job, Deploy uses the saved service/backend/target values, and job status/history/logs reflect success and failure.
 - Reuse the current installer test's external-command mocking style. Do not require a live SSH server, Docker host, K3s cluster, or real credentials in the integration suite.
 - At the same seam, cover representative Docker and K3s jobs and failure propagation. Keep tests focused on user-visible outcomes and commands, not internal helpers.
-- Validate all Docker Compose definitions with the existing Compose config check pattern.
+- Validate all Docker Compose definitions with `docker compose config --no-env-resolution -q`, so preflight checks structure without trying to read target-side `env_file` paths.
 - Validate all K3s charts with Helm lint and template/render checks, following the existing Jenkinsfile pipelines.
 - Verify that every service has both backend definitions and that secret values do not appear in saved configuration, API responses, job history, or logs.
 

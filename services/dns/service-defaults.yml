@@ -5,12 +5,5 @@
     "dnsPort": "53",
     "timezone": "Europe/Warsaw",
     "dataPath": "/mnt/core_data/pihole"
-  },
-  "docker": {
-    "network": "dns"
-  },
-  "k3s": {
-    "ingressHost": "",
-    "ingressEnabled": "false"
   }
 }
