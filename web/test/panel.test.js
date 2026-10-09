@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,17 +57,52 @@ test('saving a deployment configuration persists it without creating a job', asy
   const saved = await request('/api/configurations/postgresql/docker/local', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ port: '5433', passwordSecret: 'postgres_password', configContents: "listen_addresses = '127.0.0.1'" }),
+    body: JSON.stringify({ port: '5433', passwordSecret: 'postgres_password' }),
   });
 
   assert.equal(saved.status, 200);
   assert.equal(saved.body.configuration.port, '5433');
-  assert.equal(saved.body.configuration.configContents, "listen_addresses = '127.0.0.1'");
+  assert.equal('configContents' in saved.body.configuration, false);
   assert.equal('password' in saved.body.configuration, false);
   assert.equal((await request('/api/jobs')).body.length, 0);
   assert.match(await readFile(path.join(root, 'services', 'postgresql', 'docker', 'local.yml'), 'utf8'), /5433/);
-  assert.match(await readFile(path.join(root, 'services', 'postgresql', 'docker', 'local.yml'), 'utf8'), /127\.0\.0\.1/);
   assert.doesNotMatch(await readFile(path.join(root, 'services', 'postgresql', 'docker', 'local.yml'), 'utf8'), /real-secret-value/);
+});
+
+test('panel configuration defaults come from the tracked service catalog', async () => {
+  const response = await request('/api/configurations/postgresql/docker/catalog-check');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.configuration.image, 'postgres:16');
+  assert.equal(response.body.configuration.port, '5432');
+  assert.equal(response.body.configuration.dataPath, '/mnt/core_data/postgresql');
+  const state = (await request('/api/state')).body;
+  const proxy = state.services.find(({ id }) => id === 'proxy');
+  assert.deepEqual(proxy.fields.find(([key]) => key === 'network'), ['network', 'Docker network', 'proxy', 'docker']);
+});
+
+test('legacy target configuration migrates once and remains recoverable', async () => {
+  const legacyPath = path.join(root, 'services', 'postgresql', 'docker', 'legacy-target.yml');
+  const legacy = '{"port":"5544","username":"legacy-user","configContents":"legacy app config"}\n';
+  await mkdir(path.dirname(legacyPath), { recursive: true });
+  await writeFile(legacyPath, legacy);
+
+  const migrated = await request('/api/configurations/postgresql/docker/legacy-target');
+  assert.equal(migrated.status, 200);
+  assert.equal(migrated.body.configuration.image, 'postgres:16');
+  assert.equal(migrated.body.configuration.port, '5544');
+  assert.equal('configContents' in migrated.body.configuration, false);
+  assert.deepEqual(JSON.parse(await readFile(legacyPath, 'utf8')), {
+    schemaVersion: 2,
+    overrides: { port: '5544', username: 'legacy-user' },
+  });
+  assert.equal(await readFile(`${legacyPath}.legacy`, 'utf8'), legacy);
+
+  const migratedFile = await readFile(legacyPath, 'utf8');
+  const again = await request('/api/configurations/postgresql/docker/legacy-target');
+  assert.equal(again.body.configuration.port, '5544');
+  assert.equal(await readFile(legacyPath, 'utf8'), migratedFile);
+  assert.equal(await readFile(`${legacyPath}.legacy`, 'utf8'), legacy);
+  assert.equal((await request('/api/configurations/postgresql/k3s/legacy-target')).body.configuration.port, '5432');
 });
 
 test('target profiles store secret references but never raw credential fields', async () => {
@@ -100,6 +135,11 @@ test('every managed service has Docker and K3s deployment definitions', async ()
   assert.equal(state.services.length, 10);
   for (const service of state.services) {
     const serviceRoot = path.join(projectRoot, 'services', service.id);
+    const defaults = JSON.parse(await readFile(path.join(serviceRoot, 'service-defaults.yml'), 'utf8'));
+    assert.ok(defaults.common.image, `${service.id} must define its shared image default`);
+    for (const [key, , fallback, backend] of service.fields) {
+      assert.equal(fallback, defaults.common[key] ?? defaults[backend || 'docker'][key] ?? defaults.k3s[key] ?? '', `${service.id}.${key} API default must come from its service YAML`);
+    }
     const compose = await readFile(path.join(serviceRoot, 'docker-compose.yml'), 'utf8');
     assert.doesNotMatch(compose, /^\*\*\* Add File:/m);
     assert.ok(JSON.parse(compose).services[service.id], `${service.id} Compose must parse and define its service`);
@@ -165,14 +205,14 @@ test('backend adapters preserve service-specific settings and secret handling', 
 test('configuration editor returns safe defaults and rejects paths outside the service', async () => {
   const defaults = await request('/api/configurations/grafana/docker/local');
   assert.equal(defaults.status, 200);
-  assert.match(defaults.body.configuration.configContents, /\[auth\.anonymous\]/);
+  assert.equal(defaults.body.configuration.configFile, 'config/grafana.ini');
+  assert.equal('configContents' in defaults.body.configuration, false);
 
-  const edited = await request('/api/configurations/grafana/docker/local', {
+  const editedContents = await request('/api/configurations/grafana/docker/local', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ configContents: '[server]\nhttp_port = 3333' }),
   });
-  assert.equal(edited.status, 200);
-  assert.equal(edited.body.configuration.configContents, '[server]\nhttp_port = 3333');
+  assert.equal(editedContents.status, 400);
 
   const invalid = await request('/api/configurations/grafana/docker/local', {
     method: 'PUT', headers: { 'content-type': 'application/json' },

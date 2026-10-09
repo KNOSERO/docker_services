@@ -1,0 +1,17 @@
+{
+  "common": {
+    "image": "ghcr.io/wg-easy/wg-easy:latest",
+    "host": "ravcube.com",
+    "vpnPort": "51820",
+    "webPort": "83",
+    "passwordHashSecret": "vpn_password_hash",
+    "dnsServers": "192.168.0.5,192.168.0.6",
+    "allowedIPs": "0.0.0.0/0,::/0,192.168.0.0/24",
+    "dataPath": "/mnt/core_data/docker/etc/wireguard"
+  },
+  "docker": {},
+  "k3s": {
+    "ingressHost": "",
+    "ingressEnabled": "false"
+  }
+}
