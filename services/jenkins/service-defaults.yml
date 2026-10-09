@@ -1,0 +1,9 @@
+{
+  "common": {
+    "image": "jenkins/jenkins:lts-jdk17",
+    "port": "8080",
+    "agentPort": "50000",
+    "timezone": "Europe/Warsaw",
+    "dataPath": "/mnt/core_data/jenkins"
+  }
+}

@@ -1,5 +1,8 @@
 .idea
 .config/
+secrets/
+**/node_modules/
+web/.next/
 src/vpn/.env
 src/monitoring/.env
 monitoringPve/.env

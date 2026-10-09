@@ -1,0 +1,9 @@
+{
+  "common": {
+    "image": "pihole/pihole:latest",
+    "webPort": "82",
+    "dnsPort": "53",
+    "timezone": "Europe/Warsaw",
+    "dataPath": "/mnt/core_data/pihole"
+  }
+}

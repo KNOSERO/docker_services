@@ -3,3 +3,4 @@
 .form-controls select:focus{border-color:#57956b;box-shadow:0 0 0 2px #57956b22}
 .field textarea{min-height:180px;resize:vertical;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
 select{color-scheme:dark}
+.job-summary{padding:16px;margin-bottom:14px}

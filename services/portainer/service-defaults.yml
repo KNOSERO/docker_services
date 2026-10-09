@@ -1,0 +1,7 @@
+{
+  "common": {
+    "image": "portainer/portainer-ce:latest",
+    "port": "9000",
+    "dataPath": "/mnt/core_data/portainer"
+  }
+}

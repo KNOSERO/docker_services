@@ -1,0 +1,9 @@
+common:
+  image: postgres:16
+  port: "5432"
+  database: app
+  username: app
+  passwordSecret: postgres_password
+  configFile: config/postgresql.conf
+  configMountPath: /etc/postgresql/postgresql.conf
+  dataPath: /mnt/core_data/postgresql
