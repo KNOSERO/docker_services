@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, serviceDefaults } from '../server.js';
+import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, serviceDefaults } from '../api.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let root;
@@ -42,15 +42,10 @@ const saveTarget = async (target) => request('/api/targets', {
   body: JSON.stringify(target),
 });
 
-test('panel serves the Hermes-style application with the deployment controls', async () => {
-  const response = await fetch(baseUrl);
-  const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /Services Control Panel/);
-  assert.match(html, /assets\/panel.js/);
-  const script = await (await fetch(`${baseUrl}/assets/panel.js`)).text();
-  assert.match(script, /Save configuration/);
-  assert.match(script, /Deploy service/);
+test('panel API exposes its managed services', async () => {
+  const state = (await request('/api/state')).body;
+  assert.equal(state.services.length, 10);
+  assert.deepEqual(state.backends, ['docker', 'k3s']);
 });
 
 test('panel rejects cross-origin browser requests', async () => {

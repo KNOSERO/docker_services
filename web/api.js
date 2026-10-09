@@ -347,18 +347,6 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
       const origin = request.headers.origin;
       if (origin && new URL(origin).host !== request.headers.host) return json(response, 403, { error: 'Cross-origin requests are not allowed' });
       const url = new URL(request.url, 'http://localhost');
-      if (request.method === 'GET' && url.pathname === '/') {
-        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        response.end(await readFile(path.join(root, 'public', 'index.html')));
-        return;
-      }
-      if (request.method === 'GET' && url.pathname.startsWith('/assets/')) {
-        const name = path.basename(url.pathname);
-        const ext = path.extname(name);
-        response.writeHead(200, { 'content-type': ext === '.css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8' });
-        response.end(await readFile(path.join(root, 'public', name)));
-        return;
-      }
       if (request.method === 'GET' && url.pathname === '/api/state') {
         const targets = await readDocument(path.join(dataDir, 'targets.yml'), []);
         const jobs = await readDocument(path.join(dataDir, 'jobs.json'), []);

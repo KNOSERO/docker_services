@@ -4,7 +4,22 @@ A repository with configuration files for Docker and Kubernetes-based services.
 ## Homelab services installer
 
 Prerequisites: Podman Compose locally, mounted storage on `onyx` and `ruby`,
-and the SSH files `secrets/id_home_lab` and `secrets/id_home_lab.pub`.
+the SSH files `secrets/id_home_lab` and `secrets/id_home_lab.pub`, and a K3s
+    kubeconfig at `secrets/kubeconfig-k3s.yaml`. The kubeconfig API endpoint must
+be reachable from the installer container.
+
+Copy the K3s kubeconfig from the server:
+
+```bash
+scp rav@192.168.0.2:/etc/rancher/k3s/k3s.yaml secrets/kubeconfig-k3s.yaml
+```
+
+Initialize the service repositories, including Jenkins' Helm chart, before
+building the installer:
+
+```powershell
+git submodule update --init --recursive
+```
 
 Run the installer from the repository root:
 
@@ -13,8 +28,9 @@ podman compose -f docker/services/compose.yml run --rm --build services-installe
 ```
 
 It prepares the Docker networks, deploys DNS to both hosts, and deploys proxy
-and Portainer to `ruby`. Re-running it pulls images and recreates containers
-without removing data under `/mnt/core_data`.
+and Portainer to `ruby`. It then installs or upgrades Jenkins on K3s with Helm.
+The target hosts must have Docker Compose v2 installed. Re-running it pulls
+images and recreates containers without removing data under `/mnt/core_data`.
 
 -----
 
@@ -119,6 +135,10 @@ podman compose -f docker/panel/compose.yml up -d --build
 Open `http://127.0.0.1:6868`. Target profiles and saved service settings live in
 the ignored `.config/` directory. Secret files remain under `secrets/` and are
 mounted read-only. The panel binds to localhost in Podman mode.
+
+The Next.js application lives in `web/`. Install dependencies and start its
+development server from the repository root with `npm --prefix web ci` and
+`npm --prefix web run dev`.
 
 The K3s chart is in `services/panel/helm`; its service is ClusterIP and its
 Ingress is disabled by default. `admin.ravcube.com` is prepared as the future

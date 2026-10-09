@@ -56,7 +56,7 @@ pipeline {
             set +x
             trap 'podman logout ghcr.io >/dev/null 2>&1 || true' EXIT
             printf '%s' "$GHCR_TOKEN" | podman login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-            podman build --file panel/Dockerfile --tag "ghcr.io/knosero/docker-services-panel:$BUILD_NUMBER" .
+            podman build --file web/Dockerfile --tag "ghcr.io/knosero/docker-services-panel:$BUILD_NUMBER" .
             podman push "ghcr.io/knosero/docker-services-panel:$BUILD_NUMBER"
           '''
         }

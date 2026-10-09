@@ -27,9 +27,14 @@ RUN apt-get update \
     && rm -f /tmp/kubectl /tmp/kubectl.sha256
 
 WORKDIR /app
-COPY panel /app/panel
+COPY web/package.json web/package-lock.json /app/web/
+WORKDIR /app/web
+RUN npm ci --no-audit --no-fund
+COPY web /app/web
+RUN npm run build
+WORKDIR /app
 COPY services /app/services
 COPY templates/docker /app/templates/docker
-ENV PORT=6868 PANEL_BIND_HOST=0.0.0.0 PANEL_SECRETS_DIR=/app/secrets
+ENV NODE_ENV=production PORT=6868 PANEL_BIND_HOST=0.0.0.0 PANEL_SECRETS_DIR=/app/secrets
 EXPOSE 6868
-CMD ["node", "/app/panel/server.js"]
+CMD ["node", "/app/web/server.js"]
