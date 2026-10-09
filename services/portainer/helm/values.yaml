@@ -1,0 +1,54 @@
+{
+  "name": "portainer",
+  "namespace": "portainer",
+  "replicas": 1,
+  "image": {
+    "repository": "portainer/portainer-ce",
+    "tag": "latest",
+    "pullPolicy": "IfNotPresent"
+  },
+  "service": {
+    "type": "ClusterIP"
+  },
+  "ports": [
+    9000
+  ],
+  "servicePorts": [
+    {
+      "name": "web",
+      "port": 9000,
+      "targetPort": 9000
+    }
+  ],
+  "containerPorts": [
+    {
+      "containerPort": 9000,
+      "protocol": "TCP"
+    }
+  ],
+  "env": [],
+  "runAsUser": 0,
+  "volumes": [
+    {
+      "name": "data",
+      "hostPath": "/mnt/core_data/portainer",
+      "mountPath": "/data"
+    },
+    {
+      "name": "docker-socket",
+      "hostPath": "/var/run/docker.sock",
+      "mountPath": "/var/run/docker.sock",
+      "type": "Socket"
+    }
+  ],
+  "hostNetwork": false,
+  "configMounts": [],
+  "configMaps": [],
+  "ingress": {
+    "hosts": []
+  },
+  "secrets": {
+    "enabled": false,
+    "name": "portainer-secrets"
+  }
+}

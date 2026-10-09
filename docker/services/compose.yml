@@ -1,0 +1,10 @@
+services:
+  services-installer:
+    build:
+      context: ../..
+      dockerfile: docker/services/Dockerfile
+    container_name: services-installer
+    environment:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+    volumes:
+      - ../../secrets:/run/services-secrets:ro

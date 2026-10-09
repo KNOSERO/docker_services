@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  hello:
+    container_name: hello-world
+    image: hello-world
+
+
+networks:
+  hello:
+    name: hello
+    driver: bridge

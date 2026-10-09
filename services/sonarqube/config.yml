@@ -1,0 +1,32 @@
+name: sonarqube
+namespace: sonarqube
+replicas: 1
+
+image:
+  repository: sonarqube
+  tag: lts-community
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+
+ports:
+  - 9000
+
+runAsUser: 1000
+
+env: []
+
+volumes:
+  - name: data
+    mountPath: /opt/sonarqube/data
+    hostPath: /mnt/core_data/sonarqube/data
+  - name: extensions
+    mountPath: /opt/sonarqube/extensions
+    hostPath: /mnt/core_data/sonarqube/extensions
+  - name: logs
+    mountPath: /opt/sonarqube/logs
+    hostPath: /mnt/core_data/sonarqube/logs
+
+ingress:
+  hosts: []

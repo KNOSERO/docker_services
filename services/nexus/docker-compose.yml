@@ -1,0 +1,17 @@
+{
+  "services": {
+    "nexus": {
+      "container_name": "nexus",
+      "image": "sonatype/nexus3:latest",
+      "restart": "unless-stopped",
+      "ports": [
+        "8081:8081",
+        "5000:5000"
+      ],
+      "volumes": [
+        "/mnt/core_data/nexus:/nexus-data"
+      ],
+      "environment": {}
+    }
+  }
+}

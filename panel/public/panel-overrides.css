@@ -1,0 +1,5 @@
+.nav-item,.button{font-family:'DM Sans',Inter,system-ui,sans-serif}
+.form-controls select{min-width:145px;max-width:220px;border:1px solid #363d40;background:#131618;color:#e2e7e8;padding:8px 9px;border-radius:5px;font:11px 'DM Mono',monospace;outline:none}
+.form-controls select:focus{border-color:#57956b;box-shadow:0 0 0 2px #57956b22}
+.field textarea{min-height:180px;resize:vertical;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
+select{color-scheme:dark}

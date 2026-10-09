@@ -1,0 +1,127 @@
+pipeline {
+    agent {
+        label 'k3s'
+    }
+    options {
+        skipDefaultCheckout();
+        timestamps();
+        ansiColor('xterm')
+    }
+    environment {
+        REPO_URL = 'https://github.com/KNOSERO/service_postgreSQL.git'
+        DEFAULT_BRANCH = 'master'
+        CREDITS_ID = 'github-token'
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                 checkout([$class: 'GitSCM',
+                    userRemoteConfigs: [[
+                        url: env.REPO_URL,
+                        credentialsId: env.CREDITS_ID
+                    ]],
+                    branches: [[ name: "${env.BRANCH}" ]],
+                     extensions: [
+                        [$class: 'PruneStaleBranch'],
+                        [$class: 'CleanBeforeCheckout']
+                     ]
+                ])
+            }
+        }
+
+        stage('Init') {
+            parallel {
+                stage('Init Submodules') {
+                    steps {
+                        script {
+                            sh '''
+                                git config --global url."https://github.com/".insteadOf "git@github.com:"
+                                git submodule sync --recursive
+                                git submodule update --init --recursive --remote
+                            '''
+                        }
+                    }
+                }
+
+                stage('Init K3s config') {
+                    steps {
+                        script {
+                            withCredentials([
+                                string(credentialsId: 'jenkins-k3s', variable: 'K8S_TOKEN'),
+                                string(credentialsId: 'jenkins-k3s-ca-cert', variable: 'CA_DATA'),
+                                string(credentialsId: 'jenkins-k3s-server-url', variable: 'SERVER')
+                            ]) {
+                                def kubeconfig = "apiVersion: v1\n" +
+                                                 "kind: Config\n" +
+                                                 "clusters:\n" +
+                                                 "- cluster:\n" +
+                                                 "    certificate-authority-data: ${CA_DATA}\n" +
+                                                 "    server: ${SERVER}\n" +
+                                                 "  name: k3s\n" +
+                                                 "contexts:\n" +
+                                                 "- context:\n" +
+                                                 "    cluster: k3s\n" +
+                                                 "    user: jenkins-admin\n" +
+                                                 "    namespace: jenkins\n" +
+                                                 "  name: jenkins-admin@k3s\n" +
+                                                 "current-context: jenkins-admin@k3s\n" +
+                                                 "users:\n" +
+                                                 "- name: jenkins-admin\n" +
+                                                 "  user:\n" +
+                                                 "    token: ${K8S_TOKEN}\n"
+
+                                writeFile file: 'kubeconfig.yaml', text: kubeconfig
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Copy Config') {
+            steps {
+                script {
+                    if (fileExists('config')) {
+                        sh '''
+                            mkdir -p ./helm/config && cp -r config/* ./helm/config/
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Test Lint') {
+            steps {
+                script {
+                    sh '''
+                        helm lint ./helm -f config.yml
+                        helm template ./helm -f config.yml
+                    '''
+                }
+            }
+        }
+        stage('Dry Run Test') {
+            steps {
+                script {
+                    sh '''
+                        helm upgrade --install postgresql ./helm \
+                            -f config.yml \
+                            --kubeconfig kubeconfig.yaml \
+                            --dry-run --debug
+                    '''
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                script {
+                    sh '''
+                        helm upgrade --install postgresql ./helm \
+                            -f config.yml \
+                            --kubeconfig kubeconfig.yaml
+                    '''
+                }
+            }
+        }
+    }
+}

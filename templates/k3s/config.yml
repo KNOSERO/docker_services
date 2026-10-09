@@ -1,0 +1,26 @@
+name: hello-world
+namespace: hello-world
+replicas: 1
+
+image:
+  repository: hello-world
+  tag: latest
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+
+ports:
+
+runAsUser: 0
+
+env:
+
+volumes:
+
+configMounts:
+
+configMaps:
+
+ingress:
+  hosts:

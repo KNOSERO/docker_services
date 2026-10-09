@@ -1,0 +1,26 @@
+{
+  "services": {
+    "postgresql": {
+      "container_name": "postgresql",
+      "image": "postgres:16",
+      "restart": "unless-stopped",
+      "ports": [
+        "5432:5432"
+      ],
+      "volumes": [
+        "/mnt/core_data/postgresql:/var/lib/postgresql/data",
+        "/opt/docker-secrets/postgresql/postgres_password:/run/secrets/postgres_password:ro",
+        "/opt/docker/postgresql/postgresql.conf:/etc/postgresql/postgresql.conf:ro"
+      ],
+      "environment": {
+        "POSTGRES_DB": "app",
+        "POSTGRES_USER": "app",
+        "POSTGRES_PASSWORD_FILE": "/run/secrets/postgres_password"
+      },
+      "command": [
+        "-c",
+        "config_file=/etc/postgresql/postgresql.conf"
+      ]
+    }
+  }
+}

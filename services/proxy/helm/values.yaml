@@ -1,0 +1,84 @@
+{
+  "name": "proxy",
+  "namespace": "proxy",
+  "replicas": 1,
+  "image": {
+    "repository": "jc21/nginx-proxy-manager",
+    "tag": "latest",
+    "pullPolicy": "IfNotPresent"
+  },
+  "service": {
+    "type": "ClusterIP"
+  },
+  "ports": [
+    80,
+    443,
+    81
+  ],
+  "servicePorts": [
+    {
+      "name": "http",
+      "port": 80,
+      "targetPort": 80
+    },
+    {
+      "name": "https",
+      "port": 443,
+      "targetPort": 443
+    },
+    {
+      "name": "admin",
+      "port": 81,
+      "targetPort": 81
+    }
+  ],
+  "containerPorts": [
+    {
+      "containerPort": 80,
+      "protocol": "TCP"
+    },
+    {
+      "containerPort": 443,
+      "protocol": "TCP"
+    },
+    {
+      "containerPort": 81,
+      "protocol": "TCP"
+    }
+  ],
+  "env": [
+    {
+      "name": "DB_SQLITE_FILE",
+      "value": "/data/database.sqlite"
+    }
+  ],
+  "runAsUser": 0,
+  "volumes": [
+    {
+      "name": "data",
+      "hostPath": "/mnt/core_data/proxy",
+      "mountPath": "/data"
+    },
+    {
+      "name": "letsencrypt",
+      "hostPath": "/mnt/core_data/proxy/letsencrypt",
+      "mountPath": "/etc/letsencrypt"
+    }
+  ],
+  "hostNetwork": false,
+  "podDnsConfig": {
+    "nameservers": [
+      "192.168.0.2",
+      "192.168.0.3"
+    ]
+  },
+  "configMounts": [],
+  "configMaps": [],
+  "ingress": {
+    "hosts": []
+  },
+  "secrets": {
+    "enabled": false,
+    "name": "proxy-secrets"
+  }
+}

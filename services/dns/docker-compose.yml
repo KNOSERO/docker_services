@@ -1,0 +1,30 @@
+{
+  "services": {
+    "dns": {
+      "container_name": "dns",
+      "image": "pihole/pihole:latest",
+      "restart": "unless-stopped",
+      "ports": [
+        "53:53/tcp",
+        "53:53/udp",
+        "67:67/udp",
+        "82:80/tcp"
+      ],
+      "volumes": [
+        "/mnt/core_data/pihole:/etc/pihole",
+        "/mnt/core_data/pihole/dnsmasq.d:/etc/dnsmasq.d"
+      ],
+      "environment": {
+        "TZ": "Europe/Warsaw"
+      },
+      "networks": [
+        "dns"
+      ]
+    }
+  },
+  "networks": {
+    "dns": {
+      "external": true
+    }
+  }
+}

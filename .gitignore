@@ -1,4 +1,5 @@
 .idea
+.config/
 src/vpn/.env
 src/monitoring/.env
 monitoringPve/.env

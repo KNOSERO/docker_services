@@ -1,0 +1,18 @@
+{
+  "services": {
+    "sonarqube": {
+      "container_name": "sonarqube",
+      "image": "sonarqube:lts-community",
+      "restart": "unless-stopped",
+      "ports": [
+        "9000:9000"
+      ],
+      "volumes": [
+        "/mnt/core_data/sonarqube/data:/opt/sonarqube/data",
+        "/mnt/core_data/sonarqube/extensions:/opt/sonarqube/extensions",
+        "/mnt/core_data/sonarqube/logs:/opt/sonarqube/logs"
+      ],
+      "environment": {}
+    }
+  }
+}
