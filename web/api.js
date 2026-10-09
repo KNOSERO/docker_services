@@ -397,14 +397,14 @@ export async function helmValuesForDeployment(service, configuration) {
   return values;
 }
 
-async function validateRenderedDeployment(job) {
+export async function validateRenderedDeployment(job, runCommand = command) {
   const temporary = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'panel-validation-')));
   try {
     if (job.backend === 'docker') {
       const composeFile = path.join(temporary, 'docker-compose.yml');
       const compose = await dockerComposeFromBase(job.service, job.configuration);
       await writeFile(composeFile, yaml(compose), { mode: 0o600 });
-      const result = await command('docker', ['compose', '-f', composeFile, 'config', '-q']);
+      const result = await runCommand('docker', ['compose', '-f', composeFile, 'config', '--no-env-resolution', '-q']);
       if (result.code !== 0) throw Object.assign(new Error(`Compose validation failed: ${result.output.trim() || 'Docker Compose could not validate the rendered configuration'}`), { status: 422 });
       return { compose };
     }
@@ -418,7 +418,7 @@ async function validateRenderedDeployment(job) {
       ['lint', ['lint', chart, ...valuesArgs]],
       ['render', ['template', job.service, chart, '--namespace', job.service, ...valuesArgs]],
     ]) {
-      const result = await command('helm', args);
+      const result = await runCommand('helm', args);
       if (result.code !== 0) throw Object.assign(new Error(`Helm ${label} validation failed: ${result.output.trim() || 'Helm could not validate the rendered configuration'}`), { status: 422 });
     }
     return { helmValues };

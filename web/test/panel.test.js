@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
-import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, helmValuesForDeployment, serviceDefaults } from '../api.js';
+import { createPanel, deploymentValues, dockerCompose, dockerComposeFromBase, helmValuesForDeployment, serviceDefaults, validateRenderedDeployment } from '../api.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let root;
@@ -326,6 +326,22 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(helmValues.service.type, 'ClusterIP');
   assert.equal(helmValues.runAsUser, 472);
   assert.equal(helmValues.servicePorts[0].port, 3333);
+});
+
+test('Docker preflight validates VPN structure without resolving target env files', async () => {
+  const calls = [];
+  const rendered = await validateRenderedDeployment({
+    backend: 'docker', service: 'vpn', configuration: serviceDefaults('vpn', 'docker'),
+  }, async (program, args) => {
+    calls.push({ program, args });
+    return { code: 0, output: '' };
+  });
+
+  assert.deepEqual(rendered.compose.services.vpn.env_file, ['/opt/docker-secrets/vpn/password_hash.env']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].program, 'docker');
+  assert.deepEqual(calls[0].args.slice(0, 2), ['compose', '-f']);
+  assert.deepEqual(calls[0].args.slice(-3), ['config', '--no-env-resolution', '-q']);
 });
 
 test('configuration editor returns safe defaults and rejects paths outside the service', async () => {
