@@ -361,6 +361,8 @@ test('backend adapters preserve service-specific settings and secret handling', 
   assert.equal(legacyHelmValues.configMounts.find(({ name }) => name === 'grafana-config').mountPath, '/etc/grafana/grafana.ini');
   const customPostgresqlHelmValues = await helmValuesForDeployment('postgresql', { ...serviceDefaults('postgresql', 'k3s'), configMountPath: '/etc/postgresql/custom.conf' });
   assert.deepEqual(customPostgresqlHelmValues.image.args, ['-c', 'config_file=/etc/postgresql/custom.conf']);
+  const customPrometheusHelmValues = await helmValuesForDeployment('prometheus', { ...serviceDefaults('prometheus', 'k3s'), configMountPath: '/etc/prometheus/custom.yml' });
+  assert.deepEqual(customPrometheusHelmValues.image.args, ['--config.file=/etc/prometheus/custom.yml', '--storage.tsdb.path=/prometheus']);
   const basePortainerHelmValues = parse(await readFile(path.join(projectRoot, 'services', 'portainer', 'helm', 'values.yaml'), 'utf8'));
   const renderedPortainerHelmValues = await helmValuesForDeployment('portainer', serviceDefaults('portainer', 'k3s'));
   assert.deepEqual(renderedPortainerHelmValues.volumes.find(({ name }) => name === 'docker-socket'), basePortainerHelmValues.volumes.find(({ name }) => name === 'docker-socket'));

@@ -210,7 +210,11 @@ export function deploymentValues(service, configuration, backend = 'k3s') {
   const containerSecurityContext = service === 'vpn' ? { capabilities: { add: ['NET_ADMIN'] } } : undefined;
   return {
     name: service, namespace: service, replicas: 1, configMountPath: values.configMountPath,
-    image: { repository, tag, pullPolicy: 'IfNotPresent', ...(service === 'postgresql' ? { args: ['-c', `config_file=${values.configMountPath}`] } : {}) }, service: { type: 'ClusterIP' }, ports, servicePorts,
+    image: { repository, tag, pullPolicy: 'IfNotPresent', ...(service === 'postgresql'
+      ? { args: ['-c', `config_file=${values.configMountPath}`] }
+      : service === 'prometheus'
+        ? { args: [`--config.file=${values.configMountPath}`, '--storage.tsdb.path=/prometheus'] }
+        : {}) }, service: { type: 'ClusterIP' }, ports, servicePorts,
     containerPorts: [...new Map(servicePorts.map((port) => [`${port.targetPort}/${port.protocol || 'TCP'}`, { containerPort: port.targetPort, protocol: port.protocol || 'TCP' }])).values()],
     env, runAsUser: service === 'grafana' ? 472 : service === 'sonarqube' ? 1000 : 0,
     volumes, containerSecurityContext,
