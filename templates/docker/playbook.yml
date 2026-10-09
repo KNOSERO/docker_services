@@ -1,11 +1,87 @@
-- name: Deploy
-  hosts: SERWER
-  become: yes
-
+- name: Deploy service with the shared Docker template
+  hosts: all
+  become: true
+  gather_facts: false
   vars:
-    host_path: "{{ playbook_dir }}"
-    server_dir: "{{ playbook_dir | basename }}"
-
+    remote_service_dir: "/opt/docker/{{ service }}"
+    remote_secrets_dir: "/opt/docker-secrets/{{ service }}"
   tasks:
-    - name: Deploy Docker
-      include_tasks: docker/playbook.yml
+    - name: Create service directory
+      ansible.builtin.file:
+        path: "{{ remote_service_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Inspect required Docker networks
+      ansible.builtin.command:
+        argv:
+          - docker
+          - network
+          - inspect
+          - "{{ item }}"
+      register: inspected_networks
+      failed_when: false
+      changed_when: false
+      loop: "{{ network_names | default([]) }}"
+
+    - name: Create missing Docker networks
+      ansible.builtin.command:
+        argv:
+          - docker
+          - network
+          - create
+          - "{{ item.item }}"
+      when: item.rc != 0
+      loop: "{{ inspected_networks.results }}"
+
+    - name: Copy rendered Compose file
+      ansible.builtin.copy:
+        src: "{{ compose_source }}"
+        dest: "{{ remote_service_dir }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Create service secret directory
+      ansible.builtin.file:
+        path: "{{ remote_secrets_dir }}"
+        state: directory
+        mode: "0700"
+      when: secret_source is defined
+
+    - name: Copy service secret
+      ansible.builtin.copy:
+        src: "{{ secret_source }}"
+        dest: "{{ remote_secrets_dir }}/{{ secret_name }}"
+        mode: "0600"
+      when: secret_source is defined
+
+    - name: Copy application configuration
+      ansible.builtin.copy:
+        src: "{{ config_source }}"
+        dest: "{{ remote_service_dir }}/{{ config_name }}"
+        mode: "0644"
+      when: config_source is defined
+
+    - name: Pull service image
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ service }}"
+          - --file
+          - "{{ remote_service_dir }}/docker-compose.yml"
+          - pull
+
+    - name: Start service
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ service }}"
+          - --file
+          - "{{ remote_service_dir }}/docker-compose.yml"
+          - up
+          - --detach
+          - --force-recreate
+          - --remove-orphans

@@ -1,0 +1,31 @@
+name: service
+namespace: default
+replicas: 1
+
+image:
+  repository: hello-world
+  tag: latest
+  pullPolicy: IfNotPresent
+  args: []
+
+service:
+  type: ClusterIP
+
+ports: []
+servicePorts: []
+containerPorts: []
+runAsUser: 0
+env: []
+volumes: []
+configMounts: []
+configMaps: []
+configFiles: {}
+hostNetwork: false
+podDnsConfig: {}
+podSecurityContext: {}
+containerSecurityContext: {}
+ingress:
+  hosts: []
+secrets:
+  enabled: false
+  name: service-secrets

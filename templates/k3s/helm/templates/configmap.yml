@@ -1,16 +1,9 @@
-{{- if .Values.configMaps }}
-{{- range .Values.configMaps }}
+{{- if .Values.configFiles }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .name }}-config
-  namespace: {{ $.Values.namespace }}
+  name: {{ .Values.name }}-config
+  namespace: {{ .Values.namespace }}
 data:
-{{- $files := $.Files.Glob .path }}
-{{- range $path, $file := $files }}
-  {{ base $path }}: |-
-{{ toString $file | indent 4 }}
-{{- end }}
----
-{{- end }}
+{{ toYaml .Values.configFiles | indent 2 }}
 {{- end }}

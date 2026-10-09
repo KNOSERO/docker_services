@@ -13,31 +13,48 @@ spec:
       labels:
         app: {{ .Values.name }}
     spec:
+      {{- if .Values.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      {{- if .Values.podDnsConfig.nameservers }}
+      dnsConfig:
+        nameservers:
+{{ toYaml .Values.podDnsConfig.nameservers | indent 10 }}
+      {{- end }}
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+{{ toYaml .Values.podSecurityContext | indent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Values.name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- if .Values.image.args }}
-          args: {{ .Values.image.args }}
-          {{- end}}
-          {{- if .Values.ports }}
-          ports:
-          {{- range .Values.ports  }}
-            - containerPort: {{ . }}
+          args:
+{{ toYaml .Values.image.args | indent 12 }}
           {{- end }}
+          {{- if .Values.containerPorts }}
+          ports:
+{{ toYaml .Values.containerPorts | indent 12 }}
           {{- end }}
           {{- if .Values.env }}
           env:
-          {{- range .Values.env }}
-            - name: {{ .name }}
-              value: {{ .value }}
+{{ toYaml .Values.env | indent 12 }}
           {{- end }}
-          {{- end }}
+          securityContext:
+            runAsUser: {{ .Values.runAsUser }}
+            {{ if .Values.containerSecurityContext }}
+{{ toYaml .Values.containerSecurityContext | indent 12 }}
+            {{ end }}
           {{- if or .Values.volumes .Values.configMounts }}
           volumeMounts:
           {{- range .Values.volumes }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
+              {{- if .readOnly }}
+              readOnly: true
+              {{- end }}
           {{- end }}
           {{- range .Values.configMounts }}
             - name: {{ .name }}
@@ -49,20 +66,30 @@ spec:
               readOnly: true
               {{- end }}
           {{- end }}
-          securityContext:
-            runAsUser: {{ .Values.runAsUser }}
+          {{- if .Values.secrets.enabled }}
+            - name: application-secrets
+              mountPath: /run/secrets
+              readOnly: true
           {{- end }}
-      {{- if or .Values.volumes .Values.configMounts }}
+          {{- end }}
+      {{- if or .Values.volumes .Values.configMounts .Values.secrets.enabled }}
       volumes:
       {{- range .Values.volumes }}
         - name: {{ .name }}
           hostPath:
             path: {{ .hostPath }}
-            type: DirectoryOrCreate
+            type: {{ .type | default "DirectoryOrCreate" }}
       {{- end }}
       {{- range .Values.configMounts }}
         - name: {{ .name }}
           configMap:
             name: {{ .configMap }}
+      {{- end }}
+      {{- if .Values.secrets.enabled }}
+        - name: application-secrets
+          secret:
+            secretName: {{ .Values.secrets.name }}
+            optional: true
+            defaultMode: 0400
       {{- end }}
       {{- end }}
