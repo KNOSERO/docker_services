@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ProcessPrototype from './ProcessPrototype';
 
 const api = async (url, options = {}) => {
   const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
@@ -22,6 +23,7 @@ export default function Home() {
   const [selectedJob, setSelectedJob] = useState('');
   const [targetDraft, setTargetDraft] = useState(null);
   const [notice, setNotice] = useState('');
+  const [prototypeMode, setPrototypeMode] = useState(false);
   const service = data.services.find((item) => item.id === serviceId);
   const targets = useMemo(() => data.targets.filter((target) => target.backend === backend), [backend, data.targets]);
   const selectedTarget = targets.find((target) => target.id === targetId) || targets[0];
@@ -29,6 +31,7 @@ export default function Home() {
   const refresh = useCallback(async () => setData(await api('/api/state')), []);
   const toast = (message) => { setNotice(message); setTimeout(() => setNotice(''), 2400); };
 
+  useEffect(() => { setPrototypeMode(new URLSearchParams(window.location.search).get('prototype') === 'processes'); }, []);
   useEffect(() => { refresh().catch((error) => toast(`Unable to load the panel: ${error.message}`)); }, [refresh]);
   useEffect(() => {
     if (!targets.some((target) => target.id === targetId)) setTargetId(targets[0]?.id || '');
@@ -94,8 +97,9 @@ export default function Home() {
       <div className="sidebar-bottom"><div className="connection"><span className="pulse"/><span>Controller online</span><code>127.0.0.1:6868</code></div><div className="profile"><div className="avatar">OP</div><div><strong>Operator</strong><small>Local instance</small></div><span className="profile-menu">···</span></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div className="breadcrumbs"><span>Workspace</span><b>/</b><strong>{nav[page]}</strong></div><div className="top-actions"><span className="environment"><i/>LOCAL</span></div></header>
+      <header className="topbar"><div className="breadcrumbs"><span>Workspace</span><b>/</b><strong>{prototypeMode ? 'Deployment process prototype' : nav[page]}</strong></div><div className="top-actions"><span className="environment"><i/>{prototypeMode ? 'PROTOTYPE' : 'LOCAL'}</span></div></header>
       <div className="page-content" aria-live="polite">
+        {prototypeMode && process.env.NODE_ENV !== 'production' ? <ProcessPrototype/> : <>
         {page === 'services' && service && <>
           <div className="page-heading"><div><div className="eyebrow">{heading.services[0]}</div><h1>{heading.services[1]}</h1><p>{heading.services[2]}</p></div><button className="button" onClick={() => setTargetDraft({ backend })}>＋ Add target</button></div>
           <section className="stats"><div className="stat-card"><span>Managed services</span><strong>{data.services.length}<small>available</small></strong></div><div className="stat-card"><span>Target profiles</span><strong>{data.targets.length}<small>configured</small></strong></div><div className="stat-card"><span>Deployment jobs</span><strong>{data.jobs.length}<small>total</small></strong></div><div className="stat-card"><span>Controller</span><strong style={{ color: 'var(--green)' }}>Ready<small>local</small></strong></div></section>
@@ -108,6 +112,7 @@ export default function Home() {
         </>}
         {page === 'targets' && <><div className="page-heading"><div><div className="eyebrow">{heading.targets[0]}</div><h1>{heading.targets[1]}</h1><p>{heading.targets[2]}</p></div><button className="button primary" onClick={() => setTargetDraft({ backend })}>＋ Add target</button></div><div className="section-title"><h2>Saved targets</h2><span className="hint">Credentials are references to mounted secret files</span></div><div className="target-grid">{data.targets.length ? data.targets.map((target) => <article className="target-card" key={target.id}><span className="service-symbol">{target.backend === 'k3s' ? 'K3' : 'DK'}</span><div className="target-details"><strong>{target.name}</strong><small>{target.backend.toUpperCase()} · {target.backend === 'k3s' ? target.apiServer : `${target.user}@${target.host}`}</small></div><span className="tag">{target.id}</span><div className="actions"><button className="button" onClick={() => setTargetDraft(target)}>Edit</button><button className="button danger" onClick={async () => { try { await api(`/api/targets/${target.id}`, { method: 'DELETE' }); await refresh(); toast('Target profile removed'); } catch (error) { toast(error.message); } }}>Remove</button></div></article>) : <div className="empty-state">No target profiles yet. Add a Docker host or K3s cluster to get started.</div>}</div></>}
         {(page === 'jobs' || page === 'job') && (page === 'jobs' ? <><div className="page-heading"><div><div className="eyebrow">{heading.jobs[0]}</div><h1>{heading.jobs[1]}</h1><p>{heading.jobs[2]}</p></div></div><div className="job-list">{data.jobs.length ? data.jobs.map((job) => <button key={job.id} className="job-row" onClick={() => { setSelectedJob(job.id); setPage('job'); }}><span className="service-symbol">{initials(job.serviceName || job.service)}</span><span className="job-details"><strong>{job.serviceName || job.service} · {job.backend.toUpperCase()}</strong><small>{job.targetId} · {job.stage} · {new Date(job.createdAt).toLocaleString()}</small></span><span className={`job-status ${job.status}`}>{job.status}</span></button>) : <div className="empty-state">No deployment jobs yet. Saved configurations will appear here after you deploy a service.</div>}</div></> : (() => { const job = data.jobs.find((item) => item.id === selectedJob); return job ? <><div className="page-heading"><div><div className="eyebrow">CONTROL PLANE / JOB {job.id.slice(0, 8).toUpperCase()}</div><h1>{job.serviceName || job.service} deployment</h1><p>{job.backend.toUpperCase()} · {job.targetId} · started {new Date(job.createdAt).toLocaleString()}</p></div><span className={`job-status ${job.status}`}>{job.status}</span></div><div className="panel-card job-summary"><div className="section-title"><h2>{job.stage}</h2><span className="hint">{job.finishedAt ? `Finished ${new Date(job.finishedAt).toLocaleString()}` : 'Deployment in progress'}</span></div></div><div className="section-title"><h2>Job logs</h2><button className="button" onClick={() => setPage('jobs')}>Back to history</button></div><pre className="logs">{job.logs || 'Waiting for output…'}</pre></> : <div className="empty-state">Job not found.</div>; })())}
+        </>}
       </div>
     </main>
     {targetDraft && <TargetDialog key={targetDraft.id || 'new'} target={targetDraft} onClose={() => setTargetDraft(null)} onSubmit={saveTarget}/>}
