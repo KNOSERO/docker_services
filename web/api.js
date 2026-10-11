@@ -49,6 +49,7 @@ const backendDefaults = {
   },
 };
 let jobsWrite = Promise.resolve();
+let processesWrite = Promise.resolve();
 
 async function readDocument(file, fallback) {
   try { return JSON.parse(await readFile(file, 'utf8')); } catch (error) {
@@ -103,6 +104,18 @@ async function updateJobs(dataDir, update) {
   return operation;
 }
 
+async function updateProcesses(dataDir, update) {
+  const operation = processesWrite.then(async () => {
+    const file = path.join(dataDir, 'processes.json');
+    const processes = await readDocument(file, []);
+    const result = await update(processes);
+    await saveDocument(file, processes);
+    return result;
+  });
+  processesWrite = operation.catch(() => {});
+  return operation;
+}
+
 function json(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   response.end(JSON.stringify(value));
@@ -119,6 +132,45 @@ async function body(request) {
 
 function slug(value) {
   return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(value);
+}
+
+function validateTarget(input) {
+  if (!slug(input.id) || typeof input.name !== 'string' || !input.name.trim() || !backends.includes(input.backend)) throw Object.assign(new Error('Target requires a valid id, name, and backend'), { status: 400 });
+  const fields = input.backend === 'docker' ? ['id', 'name', 'backend', 'host', 'user', 'keySecret', 'knownHostsSecret'] : ['id', 'name', 'backend', 'apiServer', 'caSecret', 'tokenSecret'];
+  const target = Object.fromEntries(fields.filter((key) => typeof input[key] === 'string').map((key) => [key, input[key].trim()]));
+  if (input.backend === 'docker' && (!/^[a-zA-Z0-9.-]+$/.test(target.host || '') || !/^[a-z_][a-z0-9_-]*$/i.test(target.user || '') || !/^[a-zA-Z0-9._-]+$/.test(target.keySecret || ''))) throw Object.assign(new Error('Docker targets require a valid SSH hostname, user, and secret filename'), { status: 400 });
+  if (input.backend === 'docker' && target.knownHostsSecret && !/^[a-zA-Z0-9._-]+$/.test(target.knownHostsSecret)) throw Object.assign(new Error('knownHostsSecret must be a secret filename'), { status: 400 });
+  if (input.backend === 'k3s') {
+    try { const endpoint = new URL(target.apiServer); if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error(); }
+    catch { throw Object.assign(new Error('K3s API endpoint must be a valid HTTPS URL'), { status: 400 }); }
+    if (!/^[a-zA-Z0-9._-]+$/.test(target.caSecret || '') || !/^[a-zA-Z0-9._-]+$/.test(target.tokenSecret || '')) throw Object.assign(new Error('K3s targets require CA and token secret filenames'), { status: 400 });
+  }
+  return target;
+}
+
+async function validateConfiguration(definition, backend, input, base = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Configuration must be an object'), { status: 400 });
+  const allowed = new Set(fieldsForBackend(definition, backend).map(([key]) => key).filter((key) => editableFields.has(key)));
+  if (Object.keys(input).some((key) => !allowed.has(key))) throw Object.assign(new Error('Configuration contains unknown fields'), { status: 400 });
+  if (Object.entries(input).some(([, value]) => typeof value !== 'string' || value.length > 512 || value.includes('\0'))) throw Object.assign(new Error('Configuration fields must be text up to 512 characters'), { status: 400 });
+  const configuration = { ...base, ...Object.fromEntries(Object.entries(input).map(([key, value]) => [key, value.trim()])) };
+  const portKeys = ['port', 'webPort', 'vpnPort', 'httpPort', 'httpsPort', 'adminPort', 'agentPort', 'registryPort', 'dnsPort'];
+  for (const key of portKeys) if (configuration[key] && (!/^\d{1,5}$/.test(configuration[key]) || Number(configuration[key]) < 1 || Number(configuration[key]) > 65535)) throw Object.assign(new Error(`${key} must be a port from 1 to 65535`), { status: 400 });
+  if (configuration.image && !/^[a-zA-Z0-9._/:@-]+$/.test(configuration.image)) throw Object.assign(new Error('Image reference contains unsupported characters'), { status: 400 });
+  if (configuration.dataPath && (!configuration.dataPath.startsWith('/') || configuration.dataPath.includes(':') || configuration.dataPath.split('/').includes('..'))) throw Object.assign(new Error('Data path must be an absolute Linux path'), { status: 400 });
+  const configMountPath = configuration.configMountPath ?? serviceDefaults(definition.id, backend).configMountPath;
+  if (definition.fields.some(([key]) => key === 'configMountPath') && (!/^\/[A-Za-z0-9._/-]+$/.test(configMountPath || '') || configMountPath === '/' || configMountPath.split('/').some((part) => part === '.' || part === '..'))) throw Object.assign(new Error('Configuration mount path must be a safe absolute container path'), { status: 400 });
+  if (configuration.configFile) {
+    try { await readFile(await serviceConfigSource(definition.id, configuration)); }
+    catch { throw Object.assign(new Error('Config file must exist inside the service directory'), { status: 400 }); }
+  }
+  return visibleConfiguration(definition, backend, configuration);
+}
+
+function validateSchedule(schedule) {
+  if (!schedule) return null;
+  if (!Array.isArray(schedule.days) || !schedule.days.length || schedule.days.some((day) => !Number.isInteger(day) || day < 1 || day > 7) || new Set(schedule.days).size !== schedule.days.length || !/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.time || '') || schedule.timezone !== 'Europe/Warsaw') throw Object.assign(new Error('Choose weekdays and a valid Europe/Warsaw time'), { status: 400 });
+  return { days: [...schedule.days].sort((a, b) => a - b), time: schedule.time, timezone: 'Europe/Warsaw' };
 }
 
 async function command(program, args, options = {}) {
@@ -149,8 +201,8 @@ export function serviceDefaults(service, backend) {
   };
 }
 
-function serviceFormFields(definition) {
-  const defaults = serviceDefaults(definition.id, 'docker');
+function serviceFormFields(definition, backend = 'docker') {
+  const defaults = serviceDefaults(definition.id, backend);
   return definition.fields.filter(([key]) => editableFields.has(key)).map(([key, label, backend]) => [key, label, defaults[key] ?? '', backend || '', portFields.has(key) ? 'number' : 'text']);
 }
 
@@ -189,7 +241,7 @@ async function configSourceForMount(service, configuration) {
 export function deploymentValues(service, configuration, backend = 'k3s') {
   const definition = services.find((item) => item.id === service);
   const defaults = serviceDefaults(service, backend);
-  const values = Object.fromEntries(definition.fields.map(([key]) => [key, editableFields.has(key) ? configuration[key] ?? defaults[key] : defaults[key]]));
+  const values = Object.fromEntries(definition.fields.map(([key]) => [key, configuration[key] ?? defaults[key]]));
   const image = String(values.image);
   const tagSeparator = image.lastIndexOf(':');
   const [repository, tag] = tagSeparator > image.lastIndexOf('/') ? [image.slice(0, tagSeparator), image.slice(tagSeparator + 1)] : [image, 'latest'];
@@ -397,6 +449,24 @@ export async function helmValuesForDeployment(service, configuration) {
   return values;
 }
 
+function scheduledInstants(date, time) {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  const wallTime = Date.UTC(year, month - 1, day, hour, minute);
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const values = (instant) => Object.fromEntries(formatter.formatToParts(instant).map(({ type, value }) => [type, value]));
+  const offsets = new Set();
+  for (let hours = -36; hours <= 36; hours += 6) {
+    const instant = wallTime + hours * 3_600_000;
+    const local = values(instant);
+    offsets.add(Date.UTC(+local.year, +local.month - 1, +local.day, +local.hour, +local.minute) - instant);
+  }
+  return [...offsets].map((offset) => wallTime - offset).filter((instant) => {
+    const local = values(instant);
+    return `${local.year}-${local.month}-${local.day}T${local.hour}:${local.minute}` === `${date}T${time}`;
+  }).sort((a, b) => a - b);
+}
+
 export async function validateRenderedDeployment(job, runCommand = command) {
   const temporary = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'panel-validation-')));
   try {
@@ -412,6 +482,7 @@ export async function validateRenderedDeployment(job, runCommand = command) {
     const chart = path.join(root, '..', 'templates', 'k3s', 'helm');
     const valuesFile = path.join(temporary, 'values.yml');
     const helmValues = await helmValuesForDeployment(job.service, job.configuration);
+    if (job.refreshImage) helmValues.image.pullPolicy = 'Always';
     await writeFile(valuesFile, yaml(helmValues), { mode: 0o600 });
     const valuesArgs = ['--values', valuesFile];
     for (const [label, args] of [
@@ -493,6 +564,77 @@ async function deployJob(job, dataDir, setStage) {
 }
 
 export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.resolve(root, '..', '.config'), adapter = deployJob, validator = validateRenderedDeployment } = {}) {
+  // shortcut: process-local lock; use shared storage if the panel runs in multiple instances.
+  const activeDeployments = new Set();
+  const panelStartedAt = Date.now();
+  let schedulerBusy = false;
+  const runDeployment = async (job, configuration, target) => {
+    const lock = `${job.service}:${job.backend}:${job.targetId}`;
+    if (activeDeployments.has(lock)) return false;
+    activeDeployments.add(lock);
+    let recorded = false;
+    try {
+      const deployment = { ...job, refreshImage: true };
+      if (job.processId) { await updateJobs(dataDir, (jobs) => jobs.unshift(job)); recorded = true; }
+      const validation = await validator({ ...deployment, configuration, target });
+      if (validation?.code !== undefined && validation.code !== 0) throw Object.assign(new Error(`${job.backend === 'docker' ? 'Compose' : 'Deployment'} validation failed: ${validation.output || 'invalid configuration'}`), { status: 422 });
+      const rendered = validation?.compose || validation?.helmValues ? validation : undefined;
+      if (!recorded) { await updateJobs(dataDir, (jobs) => jobs.unshift(job)); recorded = true; }
+      const setStage = async (stage) => updateJobs(dataDir, (jobs) => { const current = jobs.find((item) => item.id === job.id); if (current) current.stage = stage; });
+      Promise.resolve(adapter({ ...deployment, configuration, target, rendered }, dataDir, setStage)).then(async (result) => {
+        await updateJobs(dataDir, (jobs) => {
+          const current = jobs.find((item) => item.id === job.id);
+          if (!current) return;
+          current.status = result.code === 0 ? 'succeeded' : 'failed';
+          current.stage = current.status === 'succeeded' ? 'Deployment complete' : 'Deployment failed';
+          current.finishedAt = new Date().toISOString();
+          current.logs = String(result.output || '').slice(-100_000);
+        });
+      }).catch(async (error) => {
+        await updateJobs(dataDir, (jobs) => {
+          const current = jobs.find((item) => item.id === job.id);
+          if (!current) return;
+          current.status = 'failed'; current.stage = 'Deployment failed'; current.finishedAt = new Date().toISOString(); current.logs = error.message;
+        });
+      }).finally(() => activeDeployments.delete(lock));
+      return true;
+    } catch (error) {
+      if (recorded) await updateJobs(dataDir, (jobs) => { const current = jobs.find((item) => item.id === job.id); if (current) { current.status = 'failed'; current.stage = 'Deployment validation failed'; current.finishedAt = new Date().toISOString(); current.logs = error.message; } });
+      activeDeployments.delete(lock);
+      throw error;
+    }
+  };
+  const scheduledTick = async () => {
+    if (schedulerBusy) return;
+    schedulerBusy = true;
+    try {
+    const now = new Date();
+    const local = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+    const [year, month, day, hour, minute] = [local.year, local.month, local.day, local.hour, local.minute];
+    const weekday = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).getUTCDay() || 7;
+    const processes = await readDocument(path.join(dataDir, 'processes.json'), []);
+    for (const process of processes) {
+      if (!process.schedule?.days?.includes(weekday) || process.schedule.time !== `${hour}:${minute}`) continue;
+      const [candidate] = scheduledInstants(`${year}-${month}-${day}`, process.schedule.time);
+      const scheduleSavedAt = Date.parse(process.updatedAt || process.createdAt || 0);
+      if (candidate === undefined || candidate < Math.max(panelStartedAt, scheduleSavedAt) || now.getTime() < candidate || now.getTime() >= candidate + 60_000) continue;
+      const scheduleKey = `${year}-${month}-${day}T${hour}:${minute}`;
+      const prior = (await readDocument(path.join(dataDir, 'jobs.json'), [])).some((job) => job.processId === process.id && job.scheduleKey === scheduleKey);
+      if (prior) continue;
+      const target = (await readDocument(path.join(dataDir, 'targets.yml'), [])).find((item) => item.id === process.targetId);
+      const job = { id: randomUUID(), processId: process.id, processName: process.name, trigger: 'scheduled', scheduleKey, service: process.service, serviceName: services.find((item) => item.id === process.service)?.name || process.service, backend: process.backend, targetId: process.targetId, status: 'running', stage: 'Starting deployment', createdAt: now.toISOString(), logs: '' };
+      if (!target || activeDeployments.has(`${process.service}:${process.backend}:${process.targetId}`)) {
+        job.status = 'skipped'; job.stage = target ? 'Skipped overlapping deployment' : 'Target profile unavailable'; job.finishedAt = now.toISOString(); job.logs = target ? 'A deployment for the same service, backend, and target is already running.' : 'Target profile no longer exists.';
+        await updateJobs(dataDir, (jobs) => jobs.unshift(job));
+        continue;
+      }
+      let started;
+      try { started = await runDeployment(job, process.configuration, target); }
+      catch { continue; }
+      if (!started) { job.status = 'skipped'; job.stage = 'Skipped overlapping deployment'; job.finishedAt = now.toISOString(); job.logs = 'A deployment for the same service, backend, and target is already running.'; await updateJobs(dataDir, (jobs) => jobs.unshift(job)); }
+    }
+    } finally { schedulerBusy = false; }
+  };
   const server = httpServer(async (request, response) => {
     try {
       const allowedHosts = new Set((process.env.PANEL_ALLOWED_HOSTS || '').split(',').map((host) => host.trim()).filter(Boolean));
@@ -504,7 +646,16 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
       if (request.method === 'GET' && url.pathname === '/api/state') {
         const targets = await readDocument(path.join(dataDir, 'targets.yml'), []);
         const jobs = await readDocument(path.join(dataDir, 'jobs.json'), []);
-        json(response, 200, { services: services.map((service) => ({ ...service, fields: serviceFormFields(service) })), backends, targets, jobs });
+        const processes = await readDocument(path.join(dataDir, 'processes.json'), []);
+        json(response, 200, { services: services.map((service) => ({ ...service, fields: serviceFormFields(service), fieldsByBackend: Object.fromEntries(backends.map((backend) => [backend, serviceFormFields(service, backend)])) })), backends, targets, jobs, processes });
+        return;
+      }
+      const defaultsMatch = url.pathname.match(/^\/api\/defaults\/([a-z0-9-]+)\/(docker|k3s)$/);
+      if (request.method === 'GET' && defaultsMatch) {
+        const [, service, backend] = defaultsMatch;
+        const definition = services.find((item) => item.id === service);
+        if (!definition) throw Object.assign(new Error('Unknown service'), { status: 404 });
+        json(response, 200, { configuration: visibleConfiguration(definition, backend, serviceDefaults(service, backend)) });
         return;
       }
       if (request.method === 'GET' && url.pathname === '/api/jobs') {
@@ -519,25 +670,20 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         return;
       }
       if (request.method === 'PUT' && url.pathname === '/api/targets') {
-        const target = await body(request);
-        if (!slug(target.id) || !target.name || !backends.includes(target.backend)) throw Object.assign(new Error('Target requires a valid id, name, and backend'), { status: 400 });
-        const fields = target.backend === 'docker' ? ['id', 'name', 'backend', 'host', 'user', 'keySecret', 'knownHostsSecret'] : ['id', 'name', 'backend', 'apiServer', 'caSecret', 'tokenSecret'];
-        const cleanTarget = Object.fromEntries(fields.filter((key) => typeof target[key] === 'string').map((key) => [key, target[key].trim()]));
-        if (target.backend === 'docker' && (!/^[a-zA-Z0-9.-]+$/.test(cleanTarget.host || '') || !/^[a-z_][a-z0-9_-]*$/i.test(cleanTarget.user || '') || !/^[a-zA-Z0-9._-]+$/.test(cleanTarget.keySecret || ''))) throw Object.assign(new Error('Docker targets require a valid SSH hostname, user, and secret filename'), { status: 400 });
-        if (target.backend === 'docker' && cleanTarget.knownHostsSecret && !/^[a-zA-Z0-9._-]+$/.test(cleanTarget.knownHostsSecret)) throw Object.assign(new Error('knownHostsSecret must be a secret filename'), { status: 400 });
-        if (target.backend === 'k3s') {
-          try { const endpoint = new URL(cleanTarget.apiServer); if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error(); }
-          catch { throw Object.assign(new Error('K3s API endpoint must be a valid HTTPS URL'), { status: 400 }); }
-          if (!/^[a-zA-Z0-9._-]+$/.test(cleanTarget.caSecret || '') || !/^[a-zA-Z0-9._-]+$/.test(cleanTarget.tokenSecret || '')) throw Object.assign(new Error('K3s targets require CA and token secret filenames'), { status: 400 });
-        }
+        const cleanTarget = validateTarget(await body(request));
         const file = path.join(dataDir, 'targets.yml');
         const targets = await readDocument(file, []);
-        await saveDocument(file, [...targets.filter((item) => item.id !== target.id), cleanTarget]);
+        const currentTarget = targets.find((item) => item.id === cleanTarget.id);
+        const processes = await readDocument(path.join(dataDir, 'processes.json'), []);
+        if (currentTarget && currentTarget.backend !== cleanTarget.backend && processes.some((process) => process.targetId === cleanTarget.id)) throw Object.assign(new Error('A target used by a deployment process cannot change backend'), { status: 409 });
+        await saveDocument(file, [...targets.filter((item) => item.id !== cleanTarget.id), cleanTarget]);
         json(response, 200, { target: cleanTarget });
         return;
       }
       const targetMatch = url.pathname.match(/^\/api\/targets\/([a-z0-9-]+)$/);
       if (request.method === 'DELETE' && targetMatch) {
+        const processes = await readDocument(path.join(dataDir, 'processes.json'), []);
+        if (processes.some((process) => process.targetId === targetMatch[1])) throw Object.assign(new Error('Target profile is used by a deployment process. Reassign or delete that process first.'), { status: 409 });
         const file = path.join(dataDir, 'targets.yml');
         const targets = await readDocument(file, []);
         await saveDocument(file, targets.filter((item) => item.id !== targetMatch[1]));
@@ -578,6 +724,64 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         json(response, 200, { configuration: visibleConfiguration(definition, backend, { ...serviceDefaults(service, backend), ...configuration }) });
         return;
       }
+      if (request.method === 'POST' && url.pathname === '/api/processes') {
+        const input = await body(request);
+        const definition = services.find((item) => item.id === input.service);
+        if (!definition || !backends.includes(input.backend) || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 100) throw Object.assign(new Error('Process requires a name, service, and backend'), { status: 400 });
+        let target = null;
+        let targetId = input.targetId;
+        if (input.target) { target = validateTarget(input.target); if (target.backend !== input.backend) throw Object.assign(new Error('Target profile backend does not match the process'), { status: 400 }); targetId = target.id; }
+        const targetsFile = path.join(dataDir, 'targets.yml');
+        const targets = await readDocument(targetsFile, []);
+        if (!targetId || (!target && !targets.some((item) => item.id === targetId))) throw Object.assign(new Error('Select or add a target profile'), { status: 400 });
+        const existingTarget = targets.find((item) => item.id === targetId);
+        if (target && existingTarget) throw Object.assign(new Error('A target with this identifier already exists. Choose a different server name.'), { status: 409 });
+        if (existingTarget && existingTarget.backend !== input.backend) throw Object.assign(new Error('Target profile backend does not match the process'), { status: 400 });
+        const configuration = { ...serviceDefaults(input.service, input.backend), ...await validateConfiguration(definition, input.backend, input.configuration || {}, serviceDefaults(input.service, input.backend)) };
+        const schedule = validateSchedule(input.schedule);
+        const process = { id: randomUUID(), name: input.name.trim(), service: input.service, backend: input.backend, targetId, configuration, schedule, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        if (target && !existingTarget) await saveDocument(targetsFile, [...targets, target]);
+        try { await updateProcesses(dataDir, (items) => items.unshift(process)); }
+        catch (error) { if (target && !existingTarget) await saveDocument(targetsFile, targets); throw error; }
+        json(response, 201, { process, target: target || existingTarget });
+        return;
+      }
+      const processMatch = url.pathname.match(/^\/api\/processes\/([a-f0-9-]+)$/);
+      if (processMatch && request.method === 'PUT') {
+        const input = await body(request);
+        const processes = await readDocument(path.join(dataDir, 'processes.json'), []);
+        const current = processes.find((item) => item.id === processMatch[1]);
+        if (!current) throw Object.assign(new Error('Process not found'), { status: 404 });
+        const definition = services.find((item) => item.id === input.service);
+        if (!definition || !backends.includes(input.backend) || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 100 || !slug(input.targetId)) throw Object.assign(new Error('Process requires a name, service, backend, and target'), { status: 400 });
+        const target = (await readDocument(path.join(dataDir, 'targets.yml'), [])).find((item) => item.id === input.targetId);
+        if (!target || target.backend !== input.backend) throw Object.assign(new Error('Select a target profile with the same backend'), { status: 400 });
+        const defaults = serviceDefaults(input.service, input.backend);
+        const base = current.service === input.service && current.backend === input.backend ? current.configuration || defaults : defaults;
+        const configuration = { ...base, ...await validateConfiguration(definition, input.backend, input.configuration || {}, base) };
+        const schedule = validateSchedule(input.schedule);
+        const updated = { ...current, name: input.name.trim(), service: input.service, backend: input.backend, targetId: input.targetId, configuration, schedule, updatedAt: new Date().toISOString() };
+        await updateProcesses(dataDir, (items) => { const index = items.findIndex((item) => item.id === updated.id); items[index] = updated; });
+        json(response, 200, { process: updated });
+        return;
+      }
+      if (processMatch && request.method === 'DELETE') {
+        await updateProcesses(dataDir, (items) => { const index = items.findIndex((item) => item.id === processMatch[1]); if (index < 0) throw Object.assign(new Error('Process not found'), { status: 404 }); items.splice(index, 1); });
+        json(response, 200, { ok: true });
+        return;
+      }
+      const runMatch = url.pathname.match(/^\/api\/processes\/([a-f0-9-]+)\/runs$/);
+      if (runMatch && request.method === 'POST') {
+        const process = (await readDocument(path.join(dataDir, 'processes.json'), [])).find((item) => item.id === runMatch[1]);
+        if (!process) throw Object.assign(new Error('Process not found'), { status: 404 });
+        const target = (await readDocument(path.join(dataDir, 'targets.yml'), [])).find((item) => item.id === process.targetId);
+        if (!target) throw Object.assign(new Error('Target profile not found'), { status: 404 });
+        if (target.backend !== process.backend) throw Object.assign(new Error('Target profile backend does not match the process'), { status: 409 });
+        const job = { id: randomUUID(), processId: process.id, processName: process.name, trigger: 'manual', service: process.service, serviceName: services.find((item) => item.id === process.service)?.name || process.service, backend: process.backend, targetId: process.targetId, status: 'running', stage: 'Starting deployment', createdAt: new Date().toISOString(), logs: '' };
+        if (!await runDeployment(job, process.configuration, target)) throw Object.assign(new Error('A deployment for the same service, backend, and target is already running'), { status: 409 });
+        json(response, 202, { id: job.id, status: job.status });
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/api/deployments') {
         const input = await body(request);
         const definition = services.find((item) => item.id === input.service);
@@ -589,34 +793,9 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
         const target = targets.find((item) => item.id === input.targetId);
         if (!target) throw Object.assign(new Error('Target profile not found'), { status: 404 });
         if (target.backend !== input.backend) throw Object.assign(new Error('Target profile backend does not match the deployment'), { status: 400 });
-        const validation = await validator({ service: input.service, backend: input.backend, targetId: input.targetId, configuration, target });
-        if (validation?.code !== undefined && validation.code !== 0) throw Object.assign(new Error(`${input.backend === 'docker' ? 'Compose' : 'Deployment'} validation failed: ${validation.output || 'invalid configuration'}`), { status: 422 });
-        const rendered = validation?.compose || validation?.helmValues ? validation : undefined;
         const job = { id: randomUUID(), service: input.service, serviceName: definition.name, backend: input.backend, targetId: input.targetId, status: 'running', stage: 'Starting deployment', createdAt: new Date().toISOString(), logs: '' };
-        await updateJobs(dataDir, (jobs) => jobs.unshift(job));
+        if (!await runDeployment(job, configuration, target)) throw Object.assign(new Error('A deployment for the same service, backend, and target is already running'), { status: 409 });
         json(response, 202, { id: job.id, status: job.status });
-        const setStage = async (stage) => {
-          await updateJobs(dataDir, (jobs) => { const current = jobs.find((item) => item.id === job.id); if (current) current.stage = stage; });
-        };
-        Promise.resolve(adapter({ ...job, configuration, target, rendered }, dataDir, setStage)).then(async (result) => {
-          await updateJobs(dataDir, (jobs) => {
-            const current = jobs.find((item) => item.id === job.id);
-            if (!current) return;
-            current.status = result.code === 0 ? 'succeeded' : 'failed';
-            current.stage = current.status === 'succeeded' ? 'Deployment complete' : 'Deployment failed';
-            current.finishedAt = new Date().toISOString();
-            current.logs = String(result.output || '').slice(-100_000);
-          });
-        }).catch(async (error) => {
-          await updateJobs(dataDir, (jobs) => {
-            const current = jobs.find((item) => item.id === job.id);
-            if (!current) return;
-            current.status = 'failed';
-            current.stage = 'Deployment failed';
-            current.finishedAt = new Date().toISOString();
-            current.logs = error.message;
-          });
-        });
         return;
       }
       json(response, 404, { error: 'Not found' });
@@ -624,6 +803,9 @@ export function createPanel({ dataDir = process.env.PANEL_CONFIG_DIR || path.res
       json(response, error.status || 500, { error: error.message });
     }
   });
+  const scheduler = setInterval(() => scheduledTick().catch((error) => console.error('Deployment scheduler failed:', error.message)), 10_000);
+  scheduler.unref();
+  server.on('close', () => clearInterval(scheduler));
   return server;
 }
 

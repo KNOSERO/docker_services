@@ -12,6 +12,14 @@ _Avoid_: environment, server config
 The saved settings for one service on one backend and one target profile.
 _Avoid_: global service configuration
 
+**Deployment process**:
+A named, saved deployment configuration with its own service settings, a target profile, and an optional weekly schedule.
+_Avoid_: deployment run
+
+**Deployment job**:
+A single manual or scheduled execution of a deployment process, including its status and logs.
+_Avoid_: deployment process
+
 **Deployment backend**:
 The runtime selected for a deployment: Docker or K3s.
 _Avoid_: platform

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import ProcessPrototype from './ProcessPrototype';
+import DeploymentProcesses from './DeploymentProcesses';
 
 const api = async (url, options = {}) => {
   const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
@@ -10,11 +10,11 @@ const api = async (url, options = {}) => {
   return result;
 };
 
-const nav = { services: 'Services', targets: 'Target profiles', jobs: 'Deployment jobs', job: 'Job details' };
+const nav = { services: 'Services', processes: 'Procesy wdrożeniowe', targets: 'Target profiles', jobs: 'Deployment jobs', job: 'Job details' };
 const initials = (name) => name.slice(0, 2).toUpperCase();
 
 export default function Home() {
-  const [data, setData] = useState({ services: [], targets: [], jobs: [] });
+  const [data, setData] = useState({ services: [], targets: [], jobs: [], processes: [] });
   const [page, setPage] = useState('services');
   const [serviceId, setServiceId] = useState('postgresql');
   const [backend, setBackend] = useState('docker');
@@ -23,7 +23,6 @@ export default function Home() {
   const [selectedJob, setSelectedJob] = useState('');
   const [targetDraft, setTargetDraft] = useState(null);
   const [notice, setNotice] = useState('');
-  const [prototypeMode, setPrototypeMode] = useState(false);
   const service = data.services.find((item) => item.id === serviceId);
   const targets = useMemo(() => data.targets.filter((target) => target.backend === backend), [backend, data.targets]);
   const selectedTarget = targets.find((target) => target.id === targetId) || targets[0];
@@ -31,7 +30,6 @@ export default function Home() {
   const refresh = useCallback(async () => setData(await api('/api/state')), []);
   const toast = (message) => { setNotice(message); setTimeout(() => setNotice(''), 2400); };
 
-  useEffect(() => { setPrototypeMode(new URLSearchParams(window.location.search).get('prototype') === 'processes'); }, []);
   useEffect(() => { refresh().catch((error) => toast(`Unable to load the panel: ${error.message}`)); }, [refresh]);
   useEffect(() => {
     if (!targets.some((target) => target.id === targetId)) setTargetId(targets[0]?.id || '');
@@ -44,8 +42,8 @@ export default function Home() {
     return () => { current = false; };
   }, [page, serviceId, backend, targetId, service]);
   useEffect(() => {
-    if (page !== 'jobs' && page !== 'job') return;
-    const timer = setInterval(() => api('/api/jobs').then((jobs) => setData((current) => ({ ...current, jobs }))).catch(() => {}), 4000);
+    if (page !== 'jobs' && page !== 'job' && page !== 'processes') return;
+    const timer = setInterval(() => api('/api/state').then((state) => setData((current) => ({ ...current, ...state }))).catch(() => {}), 4000);
     return () => clearInterval(timer);
   }, [page]);
 
@@ -92,14 +90,15 @@ export default function Home() {
       <a className="brand" href="#services" aria-label="Services Control Panel home"><span className="brand-mark">S</span><span><strong>services</strong><small>CONTROL PANEL</small></span></a>
       <div className="nav-label">WORKSPACE</div>
       <nav className="navigation" aria-label="Main navigation">
-        {Object.entries(nav).filter(([key]) => key !== 'job').map(([key, label]) => <button key={key} className={`nav-item ${page === key || (key === 'jobs' && page === 'job') ? 'active' : ''}`} onClick={() => setPage(key)}><span className="nav-icon">{key === 'services' ? '◈' : key === 'targets' ? '⌘' : '↗'}</span>{label}{key === 'services' && <span className="nav-count">{data.services.length}</span>}{key === 'jobs' && <span className="nav-count">{data.jobs.length}</span>}</button>)}
+        {Object.entries(nav).filter(([key]) => key !== 'job').map(([key, label]) => <button key={key} className={`nav-item ${page === key || (key === 'jobs' && page === 'job') ? 'active' : ''}`} onClick={() => setPage(key)}><span className="nav-icon">{key === 'services' ? '◈' : key === 'targets' ? '⌘' : key === 'processes' ? '⇄' : '↗'}</span>{label}{key === 'services' && <span className="nav-count">{data.services.length}</span>}{key === 'processes' && <span className="nav-count">{data.processes.length}</span>}{key === 'jobs' && <span className="nav-count">{data.jobs.length}</span>}</button>)}
       </nav>
       <div className="sidebar-bottom"><div className="connection"><span className="pulse"/><span>Controller online</span><code>127.0.0.1:6868</code></div><div className="profile"><div className="avatar">OP</div><div><strong>Operator</strong><small>Local instance</small></div><span className="profile-menu">···</span></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div className="breadcrumbs"><span>Workspace</span><b>/</b><strong>{prototypeMode ? 'Deployment process prototype' : nav[page]}</strong></div><div className="top-actions"><span className="environment"><i/>{prototypeMode ? 'PROTOTYPE' : 'LOCAL'}</span></div></header>
+      <header className="topbar"><div className="breadcrumbs"><span>Workspace</span><b>/</b><strong>{nav[page]}</strong></div><div className="top-actions"><span className="environment"><i/>LOCAL</span></div></header>
       <div className="page-content" aria-live="polite">
-        {prototypeMode && process.env.NODE_ENV !== 'production' ? <ProcessPrototype/> : <>
+        {page === 'processes' && <DeploymentProcesses data={data} onRefresh={refresh} onToast={toast}/>}
+        {<>
         {page === 'services' && service && <>
           <div className="page-heading"><div><div className="eyebrow">{heading.services[0]}</div><h1>{heading.services[1]}</h1><p>{heading.services[2]}</p></div><button className="button" onClick={() => setTargetDraft({ backend })}>＋ Add target</button></div>
           <section className="stats"><div className="stat-card"><span>Managed services</span><strong>{data.services.length}<small>available</small></strong></div><div className="stat-card"><span>Target profiles</span><strong>{data.targets.length}<small>configured</small></strong></div><div className="stat-card"><span>Deployment jobs</span><strong>{data.jobs.length}<small>total</small></strong></div><div className="stat-card"><span>Controller</span><strong style={{ color: 'var(--green)' }}>Ready<small>local</small></strong></div></section>

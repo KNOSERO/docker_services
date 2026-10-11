@@ -6,7 +6,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <head><link rel="stylesheet" href="/panel.css"/><link rel="stylesheet" href="/panel-overrides.css"/><link rel="stylesheet" href="/process-prototype.css"/></head>
+      <head><link rel="stylesheet" href="/panel.css"/><link rel="stylesheet" href="/panel-overrides.css"/><link rel="stylesheet" href="/deployment-processes.css"/></head>
       <body>{children}</body>
     </html>
   );
