@@ -2,5 +2,6 @@
 .config
 secrets
 **/node_modules
+**/.next
 **/.git
 **/.gitmodules
